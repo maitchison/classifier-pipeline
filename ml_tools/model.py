@@ -76,7 +76,7 @@ class Model:
         self.eval_samples = 500
 
         # number of samples to use when generating the model report,
-        # atleast 1000 is recommended for a good representation
+        # at least 1000 is recommended for a good representation
         self.report_samples = 2000
 
         # how often to do an evaluation + print
@@ -652,12 +652,13 @@ class Model:
                 step_time = prep_time + train_time + eval_time
                 eta = (steps_remaining * step_time / (examples_since_print / self.batch_size)) / 60
 
-                print('[epoch={0:.2f}] step {1}, training={2:.1f}%/{3:.3f} validation={4:.1f}%/{5:.3f} [times:{6:.1f}ms,{7:.1f}ms,{8:.1f}ms] eta {9:.1f} min'.format(
+                print('[epoch={0:.2f}/{10:.2f}] step {1}, training={2:.1f}%/{3:.3f} validation={4:.1f}%/{5:.3f} [times:{6:.1f}ms,{7:.1f}ms,{8:.1f}ms] eta {9:.1f} min'.format(
                     epoch, i, train_accuracy*100, train_loss * 10, val_accuracy*100, val_loss * 10,
                     1000 * prep_time / examples_since_print,
                     1000 * train_time / examples_since_print,
                     1000 * eval_time / examples_since_print,
-                    eta
+                    eta,
+                    epochs
                 ))
 
                 # create a save point
@@ -671,6 +672,12 @@ class Model:
 
                 # save at epochs
                 if int(epoch) > last_epoch_save:
+
+                    # if needed run the final test after every epoch.  Note, these accuracies should not be used
+                    # as the test set should be evaluated once at the end, however it is helpful for testing to
+                    # know how much training is required, and I want to see if this gives more stable result
+                    # than the validation score.
+                    self.eval_score = self.eval_model()
 
                     # create a training reference set
                     print("Updating example training data")
@@ -687,7 +694,7 @@ class Model:
 
                     if acc > best_report_acc:
                         print('Save best epoch tested model.')
-                        # saving a copy in the log dir allows tensorboard to access some additional information such
+                        # saving a copy in the log dir allows TensorBoard to access some additional information such
                         # as the current training data varaibles.
                         self.save(os.path.join(CHECKPOINT_FOLDER, "training-best.sav"))
                         try:
@@ -716,7 +723,6 @@ class Model:
             self.load(os.path.join(CHECKPOINT_FOLDER, "training-best.sav"))
 
         self.eval_score = self.eval_model()
-
         self.log_text('metric/final_score', self.eval_score)
 
         if self.enable_async_loading:
@@ -726,8 +732,8 @@ class Model:
         # make sure the workers load the correct number of frames.
         self.datasets.train.segment_width = self.testing_segment_frames
         self.datasets.validation.segment_width = self.testing_segment_frames
-        self.datasets.train.start_async_load(48)
-        self.datasets.validation.start_async_load(48)
+        self.datasets.train.start_async_load(32)
+        self.datasets.validation.start_async_load(32)
 
     def stop_async(self):
         self.datasets.train.stop_async_load()

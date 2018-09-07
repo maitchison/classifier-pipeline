@@ -301,14 +301,10 @@ class ModelCRNN_HQ(ConvModel):
         else:
             regularizer = None
 
+        # no dense layer after LSTM units just use lstm activations.
+        dense = tf.identity(lstm_output, "dense")
 
-        # dense hidden layer
-        dense = tf.layers.dense(inputs=lstm_output, units=384, activation=tf.nn.relu, name='hidden',
-                                kernel_regularizer=regularizer)
-
-        dense = tf.nn.dropout(dense, keep_prob=self.keep_prob)
-
-        # dense layer on top of convolutional output mapping to class labels.
+        # logits layer
         logits = tf.layers.dense(inputs=dense, units=label_count, activation=None, name='logits',
                                  kernel_regularizer=regularizer)
 
