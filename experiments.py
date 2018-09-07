@@ -28,9 +28,8 @@ import logging
 import pickle
 import os
 import datetime
-import argparse
+import numpy as np
 
-import ast
 import tensorflow as tf
 
 from model_crnn import ModelCRNN_HQ, ModelCRNN_LQ
@@ -53,7 +52,7 @@ class Job:
         self.name = name
         self.params = params
 
-def train_model(rum_name, epochs=30.0, **kwargs):
+def train_model(rum_name, epochs=30.0, limit_training_segments=None, **kwargs):
     """ Trains a model with the given hyper parameters. """
 
     logging.basicConfig(level=0)
@@ -67,7 +66,16 @@ def train_model(rum_name, epochs=30.0, **kwargs):
 
     model = ModelCRNN_HQ(labels=len(labels), **kwargs)
 
-    model.import_dataset(dataset_name)
+    if limit_training_segments is not None:
+        # setting the seed will make sure that examples included in '100' samples will also be included in '200' samples.
+        prev_seed = np.random.seed
+        np.random.seed = 20180907
+        model.limit_training_segments = limit_training_segments
+        model.import_dataset(dataset_name)
+        np.random.seed = prev_seed
+    else:
+        model.import_dataset(dataset_name)
+
     model.log_dir = LOG_FOLDER
 
     # display the data set summary
@@ -176,7 +184,16 @@ def main():
     # create our joblist
     # add_job("default",{})
     # process_job_list()
-    run_job("100 Epochs", epochs=100)
+    #run_job("100 Epochs", epochs=100)
+
+    # investigate the effect of data sample count
+    # also check track level...
+    for i in range(1,20+1):
+        segments_to_use = i * 100
+        # we want to train each model for the same equiv time.
+        equiv_epochs = 20000/segments_to_use
+        run_job("Segments {}".format(segments_to_use), epochs=equiv_epochs, limit_training_segments=segments_to_use)
+
 
 
 

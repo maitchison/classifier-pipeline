@@ -707,8 +707,12 @@ class Dataset:
             if weight_modifiers:
                 required_class_samples = int(math.ceil(required_class_samples * weight_modifiers.get(class_name, 1.0)))
             if len(segments) > required_class_samples:
-                # resample down
-                segments = np.random.choice(segments, required_class_samples, replace=False).tolist()
+                # resample down, using shuffle helps if we want to be deterministic.
+                selection = np.arange(len(self.segments))
+                np.random.shuffle(selection)
+                selection = selection[:required_samples]
+                segments = [self.segments[sample] for sample in selection]
+
             new_segments += segments
 
         self.segments = new_segments

@@ -82,6 +82,9 @@ class Model:
         # how often to do an evaluation + print
         self.print_every = 6000
 
+        # if defined limits model to train on given number of segments per class.
+        self.limit_training_segments = None
+
         # restore best weights found during training rather than the most recently one.
         self.use_best_weights = True
 
@@ -144,6 +147,10 @@ class Model:
                     dataset.remove_label(label)
 
         self.labels = self.datasets.train.labels.copy()
+
+        if self.limit_training_segments is not None:
+            logging.info("Using reduced number of segments per class.")
+            self.datasets.train.balance_resample(self.limit_training_segments)
 
         logging.info("Training segments: {0:.1f}k".format(self.datasets.train.rows/1000))
         logging.info("Validation segments: {0:.1f}k".format(self.datasets.validation.rows/1000))
@@ -652,13 +659,13 @@ class Model:
                 step_time = prep_time + train_time + eval_time
                 eta = (steps_remaining * step_time / (examples_since_print / self.batch_size)) / 60
 
-                print('[epoch={0:.2f}/{10:.2f}] step {1}, training={2:.1f}%/{3:.3f} validation={4:.1f}%/{5:.3f} [times:{6:.1f}ms,{7:.1f}ms,{8:.1f}ms] eta {9:.1f} min'.format(
+                print('[epoch={0:.2f}/{10:.2f}] step {1}, training={2:.1f}%/{3:.3f} validation={4:.1f}%/{5:.3f} [times:{6:.1f}ms,{7:.1f}ms,{8:.1f}ms] eta {9:.1f} hours (best={11:.2f}@{12})'.format(
                     epoch, i, train_accuracy*100, train_loss * 10, val_accuracy*100, val_loss * 10,
                     1000 * prep_time / examples_since_print,
                     1000 * train_time / examples_since_print,
                     1000 * eval_time / examples_since_print,
-                    eta,
-                    epochs
+                    eta / 60,
+                    epochs, 100*best_report_acc, best_step
                 ))
 
                 # create a save point
@@ -672,12 +679,6 @@ class Model:
 
                 # save at epochs
                 if int(epoch) > last_epoch_save:
-
-                    # if needed run the final test after every epoch.  Note, these accuracies should not be used
-                    # as the test set should be evaluated once at the end, however it is helpful for testing to
-                    # know how much training is required, and I want to see if this gives more stable result
-                    # than the validation score.
-                    self.eval_score = self.eval_model()
 
                     # create a training reference set
                     print("Updating example training data")
