@@ -79,6 +79,7 @@ def train_model(rum_name, epochs=30.0, limit_training_segments=None, limit_train
     np.random.seed = prev_seed
 
     model.log_dir = LOG_FOLDER
+    model.save_epoch_reference = False
 
     # display the data set summary
     print("Training on labels",labels)

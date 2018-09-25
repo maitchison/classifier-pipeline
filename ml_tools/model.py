@@ -61,6 +61,9 @@ class Model:
         self.novelty = None
         self.novelty_distance = None
 
+        # saves a copy of the model each epoch to the checkpoints folder.
+        self.save_epoch_reference = True
+
         self.state_in = None
         self.state_out = None
         self.logits_out = None
@@ -706,10 +709,13 @@ class Model:
 
                     print("Epoch report")
                     acc, f1 = self.generate_report()
-                    print("results: {:.1f} {}".format(acc*100,["{:.1f}".format(x*100) for x in f1]))
-                    print('Save epoch reference')
                     self.eval_score = acc
-                    self.save(os.path.join(CHECKPOINT_FOLDER, "training-epoch-{:02d}.sav".format(int(epoch))))
+
+                    print("results: {:.1f} {}".format(acc*100,["{:.1f}".format(x*100) for x in f1]))
+                    if self.save_epoch_references:
+                        print('Save epoch reference')
+                        self.save(os.path.join(CHECKPOINT_FOLDER, "training-epoch-{:02d}.sav".format(int(epoch))))
+
                     last_epoch_save = int(epoch)
 
                     if acc > best_report_acc:
