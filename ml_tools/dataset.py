@@ -696,24 +696,68 @@ class Dataset:
 
         self.rebuild_cdf()
 
+    def balance_resample_tracks(self, required_samples, weight_modifiers=None):
+        """ Removes tracks until all classes have given number of tracks (or less)"""
+
+        new_tracks = []
+
+        self._remove_empty_tracks()
+
+        for class_name in self.labels:
+            class_tracks = self.tracks_by_label[class_name]
+            required_class_samples = required_samples
+            if weight_modifiers:
+                required_class_samples = int(math.ceil(required_class_samples * weight_modifiers.get(class_name, 1.0)))
+            if len(class_tracks) > required_class_samples:
+                # resample down, using shuffle helps if we want to be deterministic.
+                selection = np.arange(len(class_tracks))
+                np.random.shuffle(selection)
+                selection = selection[:required_samples]
+                class_tracks = [class_tracks[sample] for sample in selection]
+
+            new_tracks += class_tracks
+
+        self.tracks = new_tracks
+        self._recalculate_track_dictionaries()
+
+        # remove orphaned segments
+        tracks = set(self.tracks)
+        self.segments = [segment for segment in self.segments if segment.track in tracks]
+
+        self.rebuild_cdf()
+
+
+    def simple_resample(self, required_samples):
+        """ Resamples dataset to given number of samples. This is not balanced accross classes as balanced_resample is.
+            Tries to make sure each segments is duplicated approximately the same number of times.
+        """
+        duplication = required_samples / len(self.segments)
+
+        last_part_count = int(0.5 + len(self.segments) * (duplication % 1))
+        samples = np.random.choice(len(self.segments), last_part_count, replace=False)
+        self.segments = (self.segments * int(duplication)) + [self.segments[sample] for sample in samples]
+        self._purge_track_segments()
+        self.rebuild_cdf()
+
+
     def balance_resample(self, required_samples, weight_modifiers=None):
         """ Removes segments until all classes have given number of samples (or less)"""
 
         new_segments = []
 
         for class_name in self.labels:
-            segments = self.get_class_segments(class_name)
+            class_segments= self.get_class_segments(class_name)
             required_class_samples = required_samples
             if weight_modifiers:
                 required_class_samples = int(math.ceil(required_class_samples * weight_modifiers.get(class_name, 1.0)))
-            if len(segments) > required_class_samples:
+            if len(class_segments) > required_class_samples:
                 # resample down, using shuffle helps if we want to be deterministic.
-                selection = np.arange(len(self.segments))
+                selection = np.arange(len(class_segments))
                 np.random.shuffle(selection)
                 selection = selection[:required_samples]
-                segments = [self.segments[sample] for sample in selection]
+                class_segments = [class_segments[sample] for sample in selection]
 
-            new_segments += segments
+            new_segments += class_segments
 
         self.segments = new_segments
 
@@ -741,6 +785,35 @@ class Dataset:
             segments = track.segments
             segments = [segment for segment in segments if (segment in segment_set)]
             track.segments = segments
+
+    def _remove_empty_tracks(self):
+        """
+        Removes any tracks that have no valid segments.
+        :return:
+        """
+        self._purge_track_segments()
+        self.tracks = [track for track in self.tracks if len(track.segments)>0]
+        self._recalculate_track_dictionaries()
+
+    def _recalculate_track_dictionaries(self):
+        """
+            Updates the track dictionary looks.  This is done automatically when adding new tracks
+            but may need to be called if manually editing self.tracks
+         """
+        self.track_by_id = {}
+        self.tracks_by_bin = {}
+        self.tracks_by_label = {}
+
+        for track in self.tracks:
+            self.track_by_id[track.track_id] = track
+
+            if track.label not in self.tracks_by_label:
+                self.tracks_by_label[track.label] = []
+            self.tracks_by_label[track.label].append(track)
+
+            if track.bin_id not in self.tracks_by_bin:
+                self.tracks_by_bin[track.bin_id] = []
+            self.tracks_by_bin[track.bin_id].append(track)
 
     def get_normalisation_constants(self, n=None):
         """

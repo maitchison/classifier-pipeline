@@ -57,7 +57,7 @@ class ConvModel(Model):
         return out
 
     def process_inputs(self):
-        """ process input channels, returns thermal, flow, mask, """
+        """ process input channels, returns thermal, filtered, flow, mask. """
 
         # Setup placeholders
         self.X = tf.placeholder(tf.float32, [None, None, 5, 48, 48], name='X')  # [B, F, C, H, W]
@@ -109,10 +109,16 @@ class ConvModel(Model):
         # grab the mask
         mask = X[:, :, 4:4 + 1]
 
+        # grab and normalise the filtered
+        # we zero out the background at a threshold of 10.
+        filtered = (X[:, :, 1:1 + 1])
+        filtered = (tf.nn.relu(filtered - self.params['thermal_threshold']) + self.params['thermal_threshold']) / 10
+
         # tap the outputs
         tf.identity(thermal, 'thermal_out')
         tf.identity(flow, 'flow_out')
         tf.identity(mask, 'mask_out')
+        tf.identity(filtered, 'filtered_out')
 
         # First put all frames in batch into one line sequence, this is required for convolutions.
         # note: we also switch to BHWC format, which is not great, but is required for CPU processing for some reason.
@@ -121,16 +127,17 @@ class ConvModel(Model):
 
         thermal = tf.reshape(thermal, [-1, 48, 48, 1])  # [B*F, 48, 48, 1]
         flow = tf.reshape(flow, [-1, 48, 48, 2])  # [B*F, 48, 48, 2]
-
         mask = tf.reshape(mask, [-1, 48, 48, 1])  # [B*F, 48, 48, 1]
+        filtered = tf.reshape(filtered, [-1, 48, 48, 1])  # [B*F, 48, 48, 1]
 
         # save distribution of inputs
         self.save_input_summary(thermal, 'inputs/thermal', 3)
+        self.save_input_summary(filtered, 'inputs/filtered', 3)
         self.save_input_summary(flow[:, :, :, 0:0 + 1], 'inputs/flow/h', 3)
         self.save_input_summary(flow[:, :, :, 1:1 + 1], 'inputs/flow/v', 3)
         self.save_input_summary(mask, 'inputs/mask', 1)
 
-        return thermal, flow, mask
+        return thermal, filtered, flow, mask
 
     def setup_novelty(self, logits, hidden):
         """ Creates nodes required for novelty"""
@@ -202,6 +209,7 @@ class ModelCRNN_HQ(ConvModel):
         'batch_norm': True,
         'lstm_units': 512,
         'enable_flow': True,
+        'use_filtered': False,
 
         # augmentation
         'augmentation': True,
@@ -233,13 +241,20 @@ class ModelCRNN_HQ(ConvModel):
         # H frame height
         # W frame width
 
-        thermal, flow, mask = self.process_inputs()
+        thermal, filtered, flow, mask = self.process_inputs()
         frame_count = tf.shape(self.X)[1]
+
+        if self.params['use_filtered']:
+            primary_channel = filtered
+            print("Using filtered channel for training with threshold {}.".format(self.params['thermal_threshold']))
+        else:
+
+            primary_channel = thermal
 
         # -------------------------------------
         # run the Convolutions
 
-        layer = thermal
+        layer = primary_channel
 
         layer = self.conv_layer('thermal/1', layer, 64, [3, 3], pool_stride=2)
         layer = self.conv_layer('thermal/2', layer, 64, [3, 3], pool_stride=2)
@@ -254,7 +269,7 @@ class ModelCRNN_HQ(ConvModel):
 
         if self.params['enable_flow']:
             # integrate thermal and flow into a 3 channel layer
-            layer = tf.concat((thermal, flow), axis=3)
+            layer = tf.concat((primary_channel, flow), axis=3)
             layer = self.conv_layer('motion/1', layer, 64, [3, 3], pool_stride=2)
             layer = self.conv_layer('motion/2', layer, 64, [3, 3], pool_stride=2)
             layer = self.conv_layer('motion/3', layer, 96, [3, 3], pool_stride=2)
@@ -402,7 +417,7 @@ class ModelCRNN_LQ(ConvModel):
         # H frame height
         # W frame width
 
-        thermal, flow, mask = self.process_inputs()
+        thermal, filtered, flow, mask = self.process_inputs()
         frame_count = tf.shape(self.X)[1]
 
         # -------------------------------------

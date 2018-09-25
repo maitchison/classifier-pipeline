@@ -82,9 +82,6 @@ class Model:
         # how often to do an evaluation + print
         self.print_every = 6000
 
-        # if defined limits model to train on given number of segments per class.
-        self.limit_training_segments = None
-
         # restore best weights found during training rather than the most recently one.
         self.use_best_weights = True
 
@@ -126,11 +123,13 @@ class Model:
         self.writer_val = None
         self.merged_summary = None
 
-    def import_dataset(self, dataset_filename, ignore_labels=None):
+    def import_dataset(self, dataset_filename, limit_segments=None, limit_tracks=None, resample_segments=None, ignore_labels=None):
         """
         Import dataset.
         :param dataset_filename: path and filename of the dataset
         :param ignore_labels: (optional) these labels will be removed from the dataset.
+        :param limit_segments: (optional) if defined limits model to train on given number of segments per class.
+
         :return:
         """
         datasets = pickle.load(open(dataset_filename,'rb'))
@@ -148,9 +147,17 @@ class Model:
 
         self.labels = self.datasets.train.labels.copy()
 
-        if self.limit_training_segments is not None:
-            logging.info("Using reduced number of segments per class.")
-            self.datasets.train.balance_resample(self.limit_training_segments)
+        if limit_segments is not None:
+            logging.info("Using {} segments per class.".format(limit_segments))
+            self.datasets.train.balance_resample(required_samples=limit_segments)
+
+        if limit_tracks is not None:
+            logging.info("Using {} tracks per class.".format(limit_tracks))
+            self.datasets.train.balance_resample_tracks(required_samples=limit_tracks)
+
+        if resample_segments is not None:
+            logging.info("Resamping training set to {} segments.".format(resample_segments))
+            self.datasets.train.simple_resample(resample_segments)
 
         logging.info("Training segments: {0:.1f}k".format(self.datasets.train.rows/1000))
         logging.info("Validation segments: {0:.1f}k".format(self.datasets.validation.rows/1000))
@@ -580,7 +587,7 @@ class Model:
 
         return data
 
-    def train_model(self, epochs=10.0, run_name=None):
+    def train_model(self, epochs=10.0, run_name=None, early_stop=False):
         """
         Trains model given number of epocs.  Uses session 'sess'
         :param epochs: number of epochs to train for
@@ -619,6 +626,10 @@ class Model:
         self.session.run(init)
 
         self.train_samples = self.setup_sample_training_data(LOG_DIR, self.writer_train)
+
+        # stop conditions
+        time_since_last_val_loss = 0
+        training_converged = False
 
         # setup a saver
         self.saver = tf.train.Saver(max_to_keep=1000)
@@ -659,23 +670,31 @@ class Model:
                 step_time = prep_time + train_time + eval_time
                 eta = (steps_remaining * step_time / (examples_since_print / self.batch_size)) / 60
 
-                print('[epoch={0:.2f}/{10:.2f}] step {1}, training={2:.1f}%/{3:.3f} validation={4:.1f}%/{5:.3f} [times:{6:.1f}ms,{7:.1f}ms,{8:.1f}ms] eta {9:.1f} hours (best={11:.2f}@{12})'.format(
+                print('[epoch={0:.2f}/{10:.2f}] step {1}, training={2:.1f}%/{3:.3f} validation={4:.1f}%/{5:.3f} [times:{6:.1f}ms,{7:.1f}ms,{8:.1f}ms] eta {9:.1f}hrs best={11:.2f}@{12}) tsbv={13}'.format(
                     epoch, i, train_accuracy*100, train_loss * 10, val_accuracy*100, val_loss * 10,
                     1000 * prep_time / examples_since_print,
                     1000 * train_time / examples_since_print,
                     1000 * eval_time / examples_since_print,
                     eta / 60,
-                    epochs, 100*best_report_acc, best_step
+                    epochs, 100*best_report_acc, best_step, time_since_last_val_loss
                 ))
 
                 # create a save point
                 self.save(os.path.join(CHECKPOINT_FOLDER, "training-most-recent.sav"))
+
+                if train_accuracy > 0.99:
+                    training_converged = True
 
                 # save the best model if validation score was good
                 if val_loss < best_val_loss:
                     print("Saving best validation model.")
                     self.save(os.path.join(CHECKPOINT_FOLDER, "training-best-val.sav"))
                     best_val_loss = val_loss
+                    time_since_last_val_loss = 0
+                else:
+                    # only count after training has converged.
+                    if training_converged:
+                        time_since_last_val_loss += 1
 
                 # save at epochs
                 if int(epoch) > last_epoch_save:
@@ -704,6 +723,10 @@ class Model:
                             logging.warning("Could not write training checkpoint, probably TensorBoard is open.")
                         best_report_acc = acc
                         best_step = i
+
+                if early_stop and time_since_last_val_loss > 5:
+                    print("Stopping early as training accuracy is high, and last best validation score was a while ago")
+                    break
 
                 eval_time = 0
                 train_time = 0

@@ -52,7 +52,8 @@ class Job:
         self.name = name
         self.params = params
 
-def train_model(rum_name, epochs=30.0, limit_training_segments=None, **kwargs):
+def train_model(rum_name, epochs=30.0, limit_training_segments=None, limit_training_tracks=None,
+                resample_segments=None, early_stop=False, **kwargs):
     """ Trains a model with the given hyper parameters. """
 
     logging.basicConfig(level=0)
@@ -66,15 +67,16 @@ def train_model(rum_name, epochs=30.0, limit_training_segments=None, **kwargs):
 
     model = ModelCRNN_HQ(labels=len(labels), **kwargs)
 
-    if limit_training_segments is not None:
-        # setting the seed will make sure that examples included in '100' samples will also be included in '200' samples.
-        prev_seed = np.random.seed
-        np.random.seed = 20180907
-        model.limit_training_segments = limit_training_segments
-        model.import_dataset(dataset_name)
-        np.random.seed = prev_seed
-    else:
-        model.import_dataset(dataset_name)
+    if "segment_length" in kwargs:
+        print("Using segment length of {} frames".format(kwargs["segment_length"]))
+        model.training_segment_frames = kwargs["segment_length"]
+        model.testing_segment_frames = kwargs["segment_length"]
+
+    # setting the seed will make sure that examples included in '100' samples will also be included in '200' samples.
+    prev_seed = np.random.seed
+    np.random.seed = 20180907
+    model.import_dataset(dataset_name, limit_segments=limit_training_segments, limit_tracks=limit_training_tracks, resample_segments=resample_segments)
+    np.random.seed = prev_seed
 
     model.log_dir = LOG_FOLDER
 
@@ -102,11 +104,11 @@ def train_model(rum_name, epochs=30.0, limit_training_segments=None, **kwargs):
     print()
     print("Found {0:.1f}K training examples".format(model.rows / 1000))
     print()
-    model.train_model(epochs=epochs, run_name=rum_name+" "+datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    model.train_model(epochs=epochs, run_name=rum_name+" "+datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), early_stop=early_stop)
     model.save()
     model.close()
 
-    # this shouldn't be nessesary, but unfortunately my model.close isn't cleaning up everything.
+    # this shouldn't be necessarily, but unfortunately my model.close isn't cleaning up everything.
     # I think it's because i'm adding everything to the default graph?
     tf.reset_default_graph()
 
@@ -184,17 +186,104 @@ def main():
     # create our joblist
     # add_job("default",{})
     # process_job_list()
-    #run_job("100 Epochs", epochs=100)
+    run_job("100 Epochs", epochs=100)
 
-    # investigate the effect of data sample count
-    # also check track level...
-    for i in range(1,20+1):
-        segments_to_use = i * 100
+    default_epochs = 20
+
+    # some basic settings
+    for run in range(1, 5 + 1):
+        run_job("default-{}".format(run), epochs=default_epochs)
+        run_job("batch_norm=Off-{}".format(run), epochs=default_epochs, batch_norm=False)
+        run_job("Flow=Off-{}".format(run), epochs=default_epochs, enable_flow=False)
+        run_job("Augmentation=Off-{}".format(run), epochs=default_epochs, augmentation=False)
+        run_job("Flow=Off Augmentation=Off-{}".format(run), epochs=default_epochs, augmentation=False, enable_flow=False)
+        run_job("use_filtered=On-{}".format(run), epochs=default_epochs, use_filtered=True)
+
+        for thermal_threshold in [-100, -50, -20, -10, 0, 10, 20, 50, 100]:
+            run_job("use_filtered=On with thermal threshold={}-{}".format(thermal_threshold, run), epochs=default_epochs, use_filtered=True, thermal_threshold=thermal_threshold)
+
+    for run in range(1, 1 + 1):
+        for keep_prob in [0.1, 0.2, 0.5, 0.8, 1.0]:
+            run_job("keep_prob={}-{}".format(keep_prob, run), epochs=default_epochs, keep_prob=keep_prob)
+        for thermal_threshold in [-100, -50, -20, -10, 0, 10, 20, 50, 100]:
+            run_job("Thermal Threshold={}-{}".format(thermal_threshold, run), epochs=default_epochs, thermal_threshold=thermal_threshold)
+        for lstm_units in [4,8,16,32,64,128,256,512,1024,2048]:
+            run_job("LSTM Units={}-{}".format(lstm_units, run), epochs=default_epochs, lstm_units=lstm_units)
+
+    # we take 5000 segments and 500 tracks as full, and so 10 tracks / 100 segments represeents 2%
+
+    segment_counts = [100, 250, 500, 1000, 2500, 5000]
+    track_counts =   [10,  25,  50,  100,  250, 500]
+
+    # investigate the effect track count
+    for tracks_to_use in track_counts:
         # we want to train each model for the same equiv time.
-        equiv_epochs = 20000/segments_to_use
-        run_job("Segments {}".format(segments_to_use), epochs=equiv_epochs, limit_training_segments=segments_to_use)
+        run_job("Tracks {}".format(tracks_to_use), epochs=default_epochs, limit_training_tracks=tracks_to_use,
+                resample_segments=30000, early_stop=True)
 
+    # investigate the effect segment count
+    for segments_to_use in segment_counts:
+        # we want to train each model for the same equiv time.
+        run_job("Segments {}".format(segments_to_use), epochs=default_epochs, limit_training_segments=segments_to_use,
+                resample_segments=30000, early_stop=True)
 
+    # segment length
+    for run in range(1,5+1):
+        for segment_length in [1,2,4,9,18,27]:
+            run_job("Segment Length {}-{}".format(segment_length, run), epochs=default_epochs, segment_length=segment_length)
+
+    # todo: random segment lengths, segment lengths longer than 27 frames...
+    # todo: test set error for various lengths, including quite long ones...
+    # todo: test where LSTM units become dense layer with averaging accross segment
+    # compare avg, max, single frame, and lstm
+    # train 10 segments at 1, then 1-2, 1-4, 1-9, 1-18, 1-27
+    # single frame without flow
+    # no threshold cut, just raw frames? also try standard normalisation
+    # background subtracted frames
+
+    # all 8 combinations (flow only etc...)
+
+    # check augmentation vs no augmentation accuracy.
+
+    #  in classify we do frame at a time with decay and ema, test this vs the 27 frames thing, also
+    #  training on random lengths is probably important
+
+    # really need to know if training longer segments helps or if it's just evaluating them.
+    # also really want some kind of ciriculum with varying length segments (i.e 1-x where x progresses)
+    # finally need to check if we should eval once at the end or every step (mayabe a paper on this)
+    # I think probably evaulatuting every step gives us a lot more information, but we can't do an update
+    # and keep the old state, so maybe just random length.
+
+    # include training time in experiments.txt
+    # write a nice notebook to evaulate the experiments
+
+    # add easy support for multiple trials, where all experiments are run trial 1, then trial 2 etc..
+    # default to 5 trials for each test.
+
+    # ask richard for a GPU :)
+
+    # thougher testing of effectivness of LSTM units (do we need 2 layers?)
+    # thougher testing of effectivness of optical flow... this is problematic
+    # thougher testing of normalisation
+    # thougher testing of thermal cut
+
+    # train on [
+    #    lstm: 1,2,4,9,18,27,45,1-45,1-45 curriculum ]
+    #    average: 1,2,4,9,18,27,45,1-45,1-45 curriculum ]
+    #    stacked: 1,2,4,9,18,27,45,1-45,1-45 curriculum ]
+    # then test on [1,2,4,9,2*9,3*9,5*9] (block and frame at a time (with decay / ema)
+
+    # copy experiments when completed to a seperate folder
+    # allow testing of previously trained experiments at certian epochs under given conditions.
+
+    # looks like we get .73 R^2 with log2(examples)~error. with slope 0.022
+    # so 2 % reduction in error per doubling of examples.
+
+    # key to pause,
+    # key to break
+
+    # a good look into normalisation, maybe just use the simplest one?  i.e. find mean and std
+    # a good look into augmentation
 
 
 if __name__ == "__main__":
