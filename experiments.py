@@ -79,7 +79,13 @@ def train_model(run_name, epochs=30.0, limit_training_segments=None, limit_train
     # setting the seed will make sure that examples included in '100' samples will also be included in '200' samples.
     prev_seed = np.random.seed
     np.random.seed = 20180907
-    model.import_dataset(dataset_name, limit_segments=limit_training_segments, limit_tracks=limit_training_tracks, resample_segments=resample_segments)
+    model.import_dataset(
+        dataset_name,
+        limit_segments=limit_training_segments,
+        limit_tracks=limit_training_tracks,
+        resample_segments=resample_segments
+
+    )
     np.random.seed = prev_seed
 
     model.log_dir = LOG_FOLDER
@@ -229,6 +235,10 @@ def main():
     # process_job_list()
 
     run_job("test", epochs=0.1)
+
+    for retina_size in [1,2,4,8,16,32,48,64,96,128]:
+        run_job("retina_size={}-{}".format(retina_size, 1), retina_size=retina_size)
+
 
     for filters in [128, 256, 512, 1024, 2048]:
         # reduce batch due to memory constraints with large number of filters.

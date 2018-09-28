@@ -212,11 +212,8 @@ class SegmentHeader:
 class Preprocessor:
     """ Handles preprocessing of track data. """
 
-    # size to scale each frame to when loaded.
-    FRAME_SIZE = 48
-
     @staticmethod
-    def apply(frames, reference_level, frame_velocity=None, augment=False, encode_frame_offsets_in_flow=False, default_inset=2):
+    def apply(frames, reference_level, frame_velocity=None, augment=False, encode_frame_offsets_in_flow=False, default_inset=2, frame_size=48):
         """
         Preprocesses the raw track data, scaling it to correct size, and adjusting to standard levels
         :param frames: a list of np array of shape [C, H, W]
@@ -224,6 +221,7 @@ class Preprocessor:
         :param frame_velocity: velocity (x,y) for each frame.
         :param augment: if true applies a slightly random crop / scale
         :param default_inset: the default number of pixels to inset when no augmentation is applied.
+        :param frame_size: width and height of output frame
         """
 
         # -------------------------------------------
@@ -260,7 +258,7 @@ class Preprocessor:
                             crop_region.top: crop_region.bottom,
                             crop_region.left: crop_region.right]
 
-            scaled_frame = [cv2.resize(np.float32(cropped_frame[channel]), dsize=(Preprocessor.FRAME_SIZE, Preprocessor.FRAME_SIZE),
+            scaled_frame = [cv2.resize(np.float32(cropped_frame[channel]), dsize=(frame_size, frame_size),
                                        interpolation=cv2.INTER_LINEAR if channel != TrackChannels.mask else cv2.INTER_NEAREST)
                             for channel in range(channels)]
             scaled_frame = np.float32(scaled_frame)
@@ -370,7 +368,8 @@ class Dataset:
         self.segment_width = 27
         # number of frames segments are spaced apart
         self.segment_spacing = 9
-        # minimum mass of a segment frame for it to be included
+        # width and height of frames to process
+        self.frame_size = 48
 
         # dictionary used to apply label remapping during track load
         self.label_mapping = None
@@ -594,7 +593,7 @@ class Dataset:
         data = Preprocessor.apply(
             data, reference_level=track.thermal_reference_level, frame_velocity=track.frame_velocity,
             encode_frame_offsets_in_flow=self.encode_frame_offsets_in_flow,
-            default_inset=self.DEFAULT_INSET
+            default_inset=self.DEFAULT_INSET, frame_size=self.frame_size
         )
         return data
 
@@ -635,7 +634,7 @@ class Dataset:
         data = Preprocessor.apply(data,
                                   segment.track.thermal_reference_level[first_frame:last_frame],
                                   segment.track.frame_velocity[first_frame:last_frame],augment=augment,
-                                  default_inset=self.DEFAULT_INSET)
+                                  default_inset=self.DEFAULT_INSET, frame_size=self.frame_size)
 
         return data
 

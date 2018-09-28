@@ -27,7 +27,7 @@ class Model:
     MODEL_DESCRIPTION = ""
     VERSION = "0.3.0"
 
-    def __init__(self, session=None):
+    def __init__(self, retina_size=48, session=None):
 
         self.name = "model"
         self.session = session or tools.get_session()
@@ -86,6 +86,9 @@ class Model:
         # how often to do an evaluation + print
         self.print_every = 10000
 
+        # size of input retina
+        self.retina_size = retina_size
+
         # restore best weights found during training rather than the most recently one.
         self.use_best_weights = True
 
@@ -134,7 +137,8 @@ class Model:
         self.writer_val = None
         self.merged_summary = None
 
-    def import_dataset(self, dataset_filename, limit_segments=None, limit_tracks=None, resample_segments=None, ignore_labels=None):
+    def import_dataset(self, dataset_filename, limit_segments=None, limit_tracks=None, resample_segments=None,
+                       ignore_labels=None):
         """
         Import dataset.
         :param dataset_filename: path and filename of the dataset
@@ -150,7 +154,9 @@ class Model:
         self.datasets.train.enable_augmentation = self.params['augmentation']
         self.datasets.validation.enable_augmentation = False
         self.datasets.test.enable_augmentation = False
+
         for dataset in datasets:
+            dataset.frame_size = self.retina_size
             if ignore_labels:
                 for label in ignore_labels:
                     dataset.remove_label(label)
@@ -318,7 +324,7 @@ class Model:
         Runs a benchmark on the model, getting runtime statistics and saving them to the tensorboard log folder.
         """
 
-        assert self.writer_train, 'Must init tensorboard writers before benchmarking.'
+        assert self.writer_train, 'Must init TensorBoard writers before benchmarking.'
 
         # we actually train on this batch, which shouldn't hurt.
         # the reason this is necessary is we need to get the true performance cost of the back-prob.
@@ -578,7 +584,7 @@ class Model:
             embedding.tensor_name = var_name
             embedding.metadata_path = meta_path
             embedding.sprite.image_path = sprite_path
-            embedding.sprite.single_image_dim.extend([48, 48])
+            embedding.sprite.single_image_dim.extend([self.retina_size, self.retina_size])
 
         projector.visualize_embeddings(writer, config)
 
@@ -999,8 +1005,7 @@ class Model:
         :param reference_level: if given will add pixels in corners of image to set vmin to 0 and vmax to this level.
         """
 
-        # hard code dims
-        W, H = 48, 48
+        W, H = self.retina_size, self.retina_size
 
         mean = tf.reduce_mean(input)
         tf.summary.histogram(name, input)
@@ -1015,7 +1020,7 @@ class Model:
             levels = np.zeros([1, H, W, 1], dtype=np.float32)
             mask = np.ones([1, H, W, 1], dtype=np.float32)
             for i in range(W):
-                levels[0, 0, i, 0] = reference_level * (i/(W-1))
+                levels[0, 0, i, 0] = reference_level * ((i+1)/W)
                 mask[0, 0, i, 0] = 0
 
             input = input * mask + levels
@@ -1029,6 +1034,7 @@ class Model:
                               shape=shape)
         input = tf.placeholder(name=name + "_in", dtype=tf.float32, shape=shape)
         assign_op = tf.assign(var, input, name=name + "_assign_op")
+        print("Creating writable varible {} with size {:.1f}mb".format(name, (tools.product(shape)*4/1024/1024)))
         return var
 
     def update_writeable_variable(self, name, data):

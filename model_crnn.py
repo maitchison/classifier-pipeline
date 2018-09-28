@@ -19,6 +19,8 @@ class ConvModel(Model):
     def conv_layer(self, name, input_layer, filters, kernel_size, conv_stride=1, pool_stride=1, disable_norm=False):
         """ Adds a convolutional layer to the model. """
 
+        N, H, W, C = input_layer.shape
+
         tf.summary.histogram(name + '/input', input_layer)
         conv = tf.layers.conv2d(inputs=input_layer, filters=filters, kernel_size=kernel_size,
                                 strides=(conv_stride, conv_stride),
@@ -49,7 +51,9 @@ class ConvModel(Model):
         else:
             out = activation
 
-        if pool_stride != 1:
+        # only apply max pool if we have dims of at least 2x2
+        if pool_stride != 1 and H >= 2 and W >= 2:
+
             out = tf.layers.max_pooling2d(inputs=out, pool_size=[pool_stride, pool_stride],
                                           strides=pool_stride,
                                           name=name + "/max_pool"
@@ -59,8 +63,10 @@ class ConvModel(Model):
     def process_inputs(self):
         """ process input channels, returns thermal, filtered, flow, mask. """
 
+        print("Building model with {}x{} retina size.".format(self.retina_size, self.retina_size))
+
         # Setup placeholders
-        self.X = tf.placeholder(tf.float32, [None, None, 5, 48, 48], name='X')  # [B, F, C, H, W]
+        self.X = tf.placeholder(tf.float32, [None, None, 5, self.retina_size, self.retina_size], name='X')  # [B, F, C, H, W]
 
         self.y = tf.placeholder(tf.int64, [None], name='y')
         batch_size = tf.shape(self.X)[0]
@@ -123,11 +129,11 @@ class ConvModel(Model):
             thermal = tf.transpose(thermal, (0, 1, 3, 4, 2))  # [B, F, H, W, 1]
             flow = tf.transpose(flow, (0, 1, 3, 4, 2))  # [B, F, H, W, 2]
 
-            raw_thermal = tf.reshape(raw_thermal, [-1, 48, 48, 1])  # [B*F, 48, 48, 1]
-            thermal = tf.reshape(thermal, [-1, 48, 48, 1])  # [B*F, 48, 48, 1]
-            flow = tf.reshape(flow, [-1, 48, 48, 2])  # [B*F, 48, 48, 2]
-            mask = tf.reshape(mask, [-1, 48, 48, 1])  # [B*F, 48, 48, 1]
-            filtered = tf.reshape(filtered, [-1, 48, 48, 1])  # [B*F, 48, 48, 1]
+            raw_thermal = tf.reshape(raw_thermal, [-1, self.retina_size, self.retina_size, 1])  # [B*F, H, W, 1]
+            thermal = tf.reshape(thermal, [-1, self.retina_size, self.retina_size, 1])  # [B*F, H, W, 1]
+            flow = tf.reshape(flow, [-1, self.retina_size, self.retina_size, 2])  # [B*F, H, W, 2]
+            mask = tf.reshape(mask, [-1, self.retina_size, self.retina_size, 1])  # [B*F, H, W, 1]
+            filtered = tf.reshape(filtered, [-1, self.retina_size, self.retina_size, 1])  # [B*F, H, W, 1]
 
             # save distribution of inputs
             self.save_input_summary(raw_thermal, 'inputs/raw_thermal', 3)
@@ -227,12 +233,12 @@ class ModelCRNN(ConvModel):
     }
 
 
-    def __init__(self, labels, **kwargs):
+    def __init__(self, labels, retina_size=48, **kwargs):
         """
         Initialise the model
         :param labels: number of labels for model to predict
         """
-        super().__init__()
+        super().__init__(retina_size)
         self.params.update(self.DEFAULT_PARAMS)
         self.params.update(kwargs)
         self._build_model(labels)
