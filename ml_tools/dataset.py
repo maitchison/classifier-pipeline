@@ -377,8 +377,6 @@ class Dataset:
 
         # this allows manipulation of data (such as scaling) during the sampling stage.
         self.enable_augmentation = False
-        # how often to scale during augmentation
-        self.scale_frequency = 0.50
 
         self.preloader_queue = None
         self.preloader_threads = None
@@ -927,7 +925,7 @@ class Dataset:
 # continue to read examples until queue is full
 def preloader(q, dataset):
     """ add a segment into buffer """
-    print(" -started async fetcher for {} with augment={} segment_width={}".format(
+    print("(started async fetcher for {} with augment={} segment_width={})".format(
         dataset.name, dataset.enable_augmentation, dataset.segment_width))
     loads = 0
     timer = time.time()

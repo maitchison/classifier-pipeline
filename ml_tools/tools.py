@@ -24,6 +24,21 @@ import cv2
 from matplotlib.colors import LinearSegmentedColormap
 import subprocess
 
+import platform
+if platform.system() == 'Windows':
+    import msvcrt
+
+    def get_key():
+        if msvcrt.kbhit():
+            return msvcrt.getch()
+        else:
+            return None
+
+else:
+    # linux version of get_key, not tested yet!
+    import curses
+
+
 EPISON = 1e-5
 
 # the coldest value to display when rendering previews
@@ -595,7 +610,10 @@ def get_confusion_matrix(pred_class, true_class, classes, normalize=True):
                           [classes[class_num] for class_num in true_class], labels=classes)
 
     if normalize:
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        cm = cm.astype('float')
+        denominator = cm.sum(axis=1)[:, np.newaxis]
+        if np.all(denominator != 0):
+            cm = cm / denominator
         cm = np.nan_to_num(cm)
 
     return cm

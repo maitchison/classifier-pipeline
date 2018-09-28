@@ -29,10 +29,11 @@ import pickle
 import os
 import datetime
 import numpy as np
+import shutil
 
 import tensorflow as tf
 
-from model_crnn import ModelCRNN_HQ, ModelCRNN_LQ
+from model_crnn import ModelCRNN
 
 # folder to put tensor board logs into
 LOG_FOLDER = "c:/cac/logs/"
@@ -43,6 +44,9 @@ DATASET_FOLDER = "c:/cac/datasets/fantail"
 # name of the file to write results to.
 RESULTS_FILENAME = "experiments.txt"
 
+# folder to store completed experiments in
+EXPERIMENTS_FOLDER = "c:/cac/experiments"
+
 # list of jobs to process.
 job_list = []
 
@@ -52,7 +56,7 @@ class Job:
         self.name = name
         self.params = params
 
-def train_model(rum_name, epochs=30.0, limit_training_segments=None, limit_training_tracks=None,
+def train_model(run_name, epochs=30.0, limit_training_segments=None, limit_training_tracks=None,
                 resample_segments=None, early_stop=False, **kwargs):
     """ Trains a model with the given hyper parameters. """
 
@@ -65,7 +69,7 @@ def train_model(rum_name, epochs=30.0, limit_training_segments=None, limit_train
     dsets = pickle.load(open(dataset_name,'rb'))
     labels = dsets[0].labels
 
-    model = ModelCRNN_HQ(labels=len(labels), **kwargs)
+    model = ModelCRNN(labels=len(labels), **kwargs)
 
     if "segment_length" in kwargs:
         print("Using segment length of {} frames".format(kwargs["segment_length"]))
@@ -79,7 +83,7 @@ def train_model(rum_name, epochs=30.0, limit_training_segments=None, limit_train
     np.random.seed = prev_seed
 
     model.log_dir = LOG_FOLDER
-    model.save_epoch_reference = False
+    model.save_epoch_references = False
 
     # display the data set summary
     print("Training on labels",labels)
@@ -99,13 +103,13 @@ def train_model(rum_name, epochs=30.0, limit_training_segments=None, limit_train
 
     print("Training started")
     print("---------------------")
-    print('Hyper parameters')
+    print('Hyperparameters')
     print("---------------------")
-    print(model.hyperparams_string)
+    print("\n".join(["{:<24}{}".format(param, value) for param, value in model.params.items()]))
     print()
     print("Found {0:.1f}K training examples".format(model.rows / 1000))
     print()
-    model.train_model(epochs=epochs, run_name=rum_name+" "+datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), early_stop=early_stop)
+    model.train_model(epochs=epochs, run_name=run_name+" "+datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), early_stop=early_stop)
     model.save()
     model.close()
 
@@ -117,7 +121,12 @@ def train_model(rum_name, epochs=30.0, limit_training_segments=None, limit_train
 
 def has_job(job_name):
     """ Returns if this job has been processed before or not. """
-    f = open(RESULTS_FILENAME, "r")
+
+    try:
+        f = open(RESULTS_FILENAME, "r")
+    except:
+        return False
+
     for line in f:
         words = line.split(",")
         job = words[0] if len(words) >= 1 else ""
@@ -127,18 +136,45 @@ def has_job(job_name):
     f.close()
     return False
 
-def log_job_complete(job_name, score,params = None, values = None):
+def copy_folder(src, dst, symlinks=False, ignore=None):
+    # modified from
+    # https://stackoverflow.com/questions/1868714/how-do-i-copy-an-entire-directory-of-files-into-an-existing-directory-using-pyth
 
-    """ Log reference to job being complete
+    try:
+        os.mkdir("c:/cac/experiments/test")
+    except FileExistsError:
+        # this is fine... don't look before you leap ;)
+        pass
+
+    for item in os.listdir(src):
+        s = os.path.join(src, item)
+        d = os.path.join(dst, item)
+        if os.path.isdir(s):
+            shutil.copytree(s, d, symlinks, ignore)
+        else:
+            shutil.copy2(s, d)
+
+def log_job_complete(model, job_name, score,params = None, values = None):
+
+    """ Log reference to job being complete, and move important files to a folder
+    :param model The model
     :param job_name The name of the job
     :param score The final evaluation score
     :param params [optional] A list of the parameters used to train this model
     :param values [optional] A corresponding list of the parameter values used to train this model
 
     """
+
     f = open(RESULTS_FILENAME, "a")
     f.write("{}, {}, {}, {}\n".format(job_name, str(score), params if params is not None else "", values if values is not None else ""))
     f.close()
+
+    # copy completed log to folder
+    try:
+        copy_folder(os.path.join(LOG_FOLDER, model.log_id), os.path.join(EXPERIMENTS_FOLDER, job_name))
+    except Exception as e:
+        print("Error copying job to experiments folder:",e)
+
 
 def run_job(job_name, **kwargs):
     """ Run a job with given hyper parameters, and log its results. """
@@ -146,6 +182,10 @@ def run_job(job_name, **kwargs):
     # check if we have done this job...
     if has_job(job_name):
         return
+    
+    # override default epochs
+    if 'epochs' not in kwargs:
+        kwargs['epochs'] = 20
 
     print("-" * 60)
     print("Processing job '{}' with params {}".format(job_name, kwargs))
@@ -153,7 +193,7 @@ def run_job(job_name, **kwargs):
 
     model = train_model("experiments/" + job_name, **kwargs)
 
-    log_job_complete(job_name, model.eval_score, list(kwargs.keys()), list(kwargs.values()))
+    log_job_complete(model, job_name, model.eval_score, list(kwargs.keys()), list(kwargs.values()))
 
 
 def process_job_list():
@@ -187,29 +227,35 @@ def main():
     # create our joblist
     # add_job("default",{})
     # process_job_list()
-    run_job("100 Epochs", epochs=100)
 
-    default_epochs = 20
+    run_job("test", epochs=0.1)
+
+    for filters in [128, 256, 512, 1024, 2048]:
+        # reduce batch due to memory constraints with large number of filters.
+        run_job("filters={}-{}".format(filters, 1), filters=filters, batch_size=8192//filters)
 
     # some basic settings
     for run in range(1, 5 + 1):
-        run_job("default-{}".format(run), epochs=default_epochs)
-        run_job("batch_norm=Off-{}".format(run), epochs=default_epochs, batch_norm=False)
-        run_job("Flow=Off-{}".format(run), epochs=default_epochs, enable_flow=False)
-        run_job("Augmentation=Off-{}".format(run), epochs=default_epochs, augmentation=False)
-        run_job("Flow=Off Augmentation=Off-{}".format(run), epochs=default_epochs, augmentation=False, enable_flow=False)
-        run_job("use_filtered=On-{}".format(run), epochs=default_epochs, use_filtered=True)
+        run_job("default-{}".format(run))
+        run_job("batch_norm=Off-{}".format(run), batch_norm=False)
+        run_job("Flow=Off-{}".format(run), enable_flow=False)
+        run_job("Augmentation=Off-{}".format(run), augmentation=False)
+        run_job("Flow=Off Augmentation=Off-{}".format(run), augmentation=False, enable_flow=False)
+        run_job("use_filtered=On-{}".format(run), use_filtered=True)
 
-        for thermal_threshold in [-100, -50, -20, -10, 0, 10, 20, 50, 100]:
-            run_job("use_filtered=On with thermal threshold={}-{}".format(thermal_threshold, run), epochs=default_epochs, use_filtered=True, thermal_threshold=thermal_threshold)
 
     for run in range(1, 1 + 1):
-        for keep_prob in [0.1, 0.2, 0.5, 0.8, 1.0]:
-            run_job("keep_prob={}-{}".format(keep_prob, run), epochs=default_epochs, keep_prob=keep_prob)
+
         for thermal_threshold in [-100, -50, -20, -10, 0, 10, 20, 50, 100]:
-            run_job("Thermal Threshold={}-{}".format(thermal_threshold, run), epochs=default_epochs, thermal_threshold=thermal_threshold)
+            run_job("use_filtered=On with thermal threshold={}-{}".format(thermal_threshold, run), use_filtered=True, thermal_threshold=thermal_threshold)
+        for batch_size in [1, 2, 4, 8, 16, 32, 64]:
+            run_job("batch_size={}-{}".format(batch_size, run), batch_size=batch_size)
+        for keep_prob in [0.1, 0.2, 0.5, 0.8, 1.0]:
+            run_job("keep_prob={}-{}".format(keep_prob, run), keep_prob=keep_prob)
+        for thermal_threshold in [-100, -50, -20, -10, 0, 10, 20, 50, 100]:
+            run_job("Thermal Threshold={}-{}".format(thermal_threshold, run), thermal_threshold=thermal_threshold)
         for lstm_units in [4,8,16,32,64,128,256,512,1024,2048]:
-            run_job("LSTM Units={}-{}".format(lstm_units, run), epochs=default_epochs, lstm_units=lstm_units)
+            run_job("LSTM Units={}-{}".format(lstm_units, run), lstm_units=lstm_units)
 
     # we take 5000 segments and 500 tracks as full, and so 10 tracks / 100 segments represeents 2%
 
@@ -219,19 +265,19 @@ def main():
     # investigate the effect track count
     for tracks_to_use in track_counts:
         # we want to train each model for the same equiv time.
-        run_job("Tracks {}".format(tracks_to_use), epochs=default_epochs, limit_training_tracks=tracks_to_use,
+        run_job("Tracks {}".format(tracks_to_use),   limit_training_tracks=tracks_to_use,
                 resample_segments=30000, early_stop=True)
 
     # investigate the effect segment count
     for segments_to_use in segment_counts:
         # we want to train each model for the same equiv time.
-        run_job("Segments {}".format(segments_to_use), epochs=default_epochs, limit_training_segments=segments_to_use,
+        run_job("Segments {}".format(segments_to_use),   limit_training_segments=segments_to_use,
                 resample_segments=30000, early_stop=True)
 
     # segment length
     for run in range(1,5+1):
         for segment_length in [1,2,4,9,18,27]:
-            run_job("Segment Length {}-{}".format(segment_length, run), epochs=default_epochs, segment_length=segment_length)
+            run_job("Segment Length {}-{}".format(segment_length, run),   segment_length=segment_length)
 
     # todo: random segment lengths, segment lengths longer than 27 frames...
     # todo: test set error for various lengths, including quite long ones...

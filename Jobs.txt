@@ -1,0 +1,12 @@
+# List of Jobs for workers to process.
+# Jobs are in JSON format
+
+# Job Title,    Params,     Priority,      Runs,        Notes
+
+{
+    "Default": {
+
+    }
+}
+Default,        ,           1,              5,          This is the model with default settings
+

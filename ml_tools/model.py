@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
 import numpy as np
 import matplotlib.pyplot as plt
+import msvcrt
 
 import os.path
 import pickle
@@ -62,7 +63,7 @@ class Model:
         self.novelty_distance = None
 
         # saves a copy of the model each epoch to the checkpoints folder.
-        self.save_epoch_reference = True
+        self.save_epoch_references = True
 
         self.state_in = None
         self.state_out = None
@@ -83,7 +84,7 @@ class Model:
         self.report_samples = 2000
 
         # how often to do an evaluation + print
-        self.print_every = 6000
+        self.print_every = 10000
 
         # restore best weights found during training rather than the most recently one.
         self.use_best_weights = True
@@ -100,6 +101,11 @@ class Model:
         # folder to write tensorboard logs to
         self.log_dir = './logs'
         self.log_id = ''
+        # when enabled saves a copy of the model in the log directory whenever an improved model is found.
+        # this tends to clutter the logs folder, and can cause problems if tensorboard is open.  It does
+        # allow for variables stored in the model (training examples for example) to be seen in tensorboard
+        # however.
+        self.save_model_in_log_dir = False
 
         # number of frames per segment during training
         self.training_segment_frames = 27
@@ -111,12 +117,14 @@ class Model:
             # augmentation
             'augmentation': True,
             'thermal_threshold': 10,
-            'scale_frequency': 0.5,
             # dropout
             'keep_prob': 0.5,
             # training
             'batch_size': 16
         }
+
+        # dictionary containing various stats during training.
+        self.stats = {}
 
         """ List of labels this model can classifiy. """
         self.labels = []
@@ -140,7 +148,6 @@ class Model:
 
         # augmentation really helps with reducing over-fitting, but test set should be fixed so we don't apply it there.
         self.datasets.train.enable_augmentation = self.params['augmentation']
-        self.datasets.train.scale_frequency = self.params['scale_frequency']
         self.datasets.validation.enable_augmentation = False
         self.datasets.test.enable_augmentation = False
         for dataset in datasets:
@@ -522,8 +529,6 @@ class Model:
     def _create_sprite_image(self, images):
         """Returns a sprite image consisting of images passed as argument. Images should be [n,h,w]"""
 
-        print(np.min(images), np.max(images), np.mean(images))
-
         # clip out the negative values
         images[images < 0] = 0
 
@@ -620,6 +625,11 @@ class Model:
         best_report_acc = 0
         best_val_loss = float('inf')
 
+        step_delay = 0
+
+        self.stats['training_start_time'] = time.time()
+        self.stats['training_max_epoch'] = epochs
+
         # setup writers and run a quick benchmark
         print("Initialising summary writers at {}.".format(LOG_DIR))
         self.setup_summary_writers(run_name)
@@ -643,7 +653,42 @@ class Model:
 
         for i in range(iterations):
 
+            time.sleep(step_delay/1000)
+
+            key = tools.get_key()
+            if key:
+                key = key.decode("utf-8")
+                print('Key press detected: ',key)
+                if key == 'q':
+                    print("exiting.")
+                    self.close()
+                    quit()
+                if key == '<':
+                    step_delay = max(0, step_delay-50)
+                    print("delay = ",step_delay)
+                if key == '>':
+                    step_delay += 50
+                    print("delay = ",step_delay)
+                if key == ',':
+                    step_delay = max(0, step_delay-10)
+                    print("delay = ",step_delay)
+                if key == '.':
+                    step_delay += 10
+                    print("delay = ",step_delay)
+                if key == 'p':
+                    print("pausing, press r to resume")
+                    while True:
+                        key = tools.get_key()
+                        if key and key.decode("utf-8") == 'r':
+                            break
+                    print('Resumed.')
+
             self.step = i
+            epoch = (self.batch_size * i) / self.rows
+
+            self.stats['training_current_step'] = self.step
+            self.stats['training_current_epoch'] = epoch
+            self.stats['training_time'] = (time.time() - self.stats['training_start_time']) / 60 / 60
 
             # get a new batch
             start = time.time()
@@ -665,13 +710,13 @@ class Model:
                     val_batch[0], val_batch[1],
                     writer=self.writer_val, include_detailed_summary=True)
 
-                epoch = (self.batch_size * i) / self.rows
-
                 eval_time += time.time()-start
 
                 steps_remaining = (iterations - i)
                 step_time = prep_time + train_time + eval_time
                 eta = (steps_remaining * step_time / (examples_since_print / self.batch_size)) / 60
+
+                best_epoch = (best_step * self.batch_size) / self.rows
 
                 print('[epoch={0:.2f}/{10:.2f}] step {1}, training={2:.1f}%/{3:.3f} validation={4:.1f}%/{5:.3f} [times:{6:.1f}ms,{7:.1f}ms,{8:.1f}ms] eta {9:.1f}hrs best={11:.2f}@{12}) tsbv={13}'.format(
                     epoch, i, train_accuracy*100, train_loss * 10, val_accuracy*100, val_loss * 10,
@@ -679,19 +724,14 @@ class Model:
                     1000 * train_time / examples_since_print,
                     1000 * eval_time / examples_since_print,
                     eta / 60,
-                    epochs, 100*best_report_acc, best_step, time_since_last_val_loss
+                    epochs, 100*best_report_acc, best_epoch, time_since_last_val_loss
                 ))
-
-                # create a save point
-                self.save(os.path.join(CHECKPOINT_FOLDER, "training-most-recent.sav"))
 
                 if train_accuracy > 0.99:
                     training_converged = True
 
-                # save the best model if validation score was good
+                # monitor the best validation score.
                 if val_loss < best_val_loss:
-                    print("Saving best validation model.")
-                    self.save(os.path.join(CHECKPOINT_FOLDER, "training-best-val.sav"))
                     best_val_loss = val_loss
                     time_since_last_val_loss = 0
                 else:
@@ -701,17 +741,16 @@ class Model:
 
                 # save at epochs
                 if int(epoch) > last_epoch_save:
-
                     # create a training reference set
-                    print("Updating example training data")
                     self.update_training_data_examples()
                     self.tune_novelty_detection()
 
-                    print("Epoch report")
+                    print('-'*60)
+                    print("Epoch report - {} (training for {:.1f}hrs): ".format(run_name, self.stats['training_time']))
                     acc, f1 = self.generate_report()
                     self.eval_score = acc
 
-                    print("results: {:.1f} {}".format(acc*100,["{:.1f}".format(x*100) for x in f1]))
+                    print("Results: {:.1f} {}".format(acc*100,["{:.1f}".format(x*100) for x in f1]))
                     if self.save_epoch_references:
                         print('Save epoch reference')
                         self.save(os.path.join(CHECKPOINT_FOLDER, "training-epoch-{:02d}.sav".format(int(epoch))))
@@ -719,14 +758,15 @@ class Model:
                     last_epoch_save = int(epoch)
 
                     if acc > best_report_acc:
-                        print('Save best epoch tested model.')
+                        print('Saving best validation model....')
                         # saving a copy in the log dir allows TensorBoard to access some additional information such
-                        # as the current training data varaibles.
+                        # as the current training data variables.
                         self.save(os.path.join(CHECKPOINT_FOLDER, "training-best.sav"))
-                        try:
-                            self.save(os.path.join(LOG_DIR, "training-epoch-{:02d}.sav".format(int(epoch))))
-                        except Exception as e:
-                            logging.warning("Could not write training checkpoint, probably TensorBoard is open.")
+                        if self.save_model_in_log_dir:
+                            try:
+                                self.save(os.path.join(LOG_DIR, "training-epoch-{:02d}.sav".format(int(epoch))))
+                            except Exception as e:
+                                logging.warning("Could not write training checkpoint, probably TensorBoard is open.")
                         best_report_acc = acc
                         best_step = i
 
@@ -745,12 +785,20 @@ class Model:
             _ = self.session.run([self.train_op], feed_dict=feed_dict)
             train_time += time.time()-start
 
+            self.stats['training_segment_train_time'] = train_time
+
             examples_since_print += self.batch_size
+
+        # make sure we have a final state copy
+        # we save copyies in the checkpoing folder, and also in the log folder for reference.
+        self.save(os.path.join(CHECKPOINT_FOLDER, "training-final.sav"))
+        self.save(os.path.join(LOG_DIR, "training-final.sav"))
 
         # restore previous best
         if self.use_best_weights:
             print("Using model from step", best_step)
             self.load(os.path.join(CHECKPOINT_FOLDER, "training-best.sav"))
+            self.save(os.path.join(LOG_DIR, "training-best.sav"))
 
         self.eval_score = self.eval_model()
         self.log_text('metric/final_score', self.eval_score)
@@ -793,7 +841,7 @@ class Model:
             self.saver.save(self.session, filename)
         except Exception as e:
             print("*"*60)
-            print("Warning, fail saved.  This is usally because the file was open (maybe dropbox was running?)")
+            print("Warning, fail saved.  This is usually because the file was open (maybe dropbox was running?)")
             print("*" * 60)
             print(e)
 
@@ -807,6 +855,10 @@ class Model:
         model_stats['hyperparams'] = self.params
         model_stats['log_id'] = self.log_id
         model_stats['training_date'] = str(time.time())
+        model_stats['training_time'] = self.stats['training_time']
+        model_stats['training_segment_time'] = self.stats['training_segment_train_time']
+        model_stats['training_epochs'] = self.stats['training_current_epoch']
+        model_stats['training_max_epochs'] = self.stats['training_max_epoch']
         model_stats['version'] = self.VERSION
 
         json.dump(model_stats, open(filename+ ".txt", 'w'), indent=4)
