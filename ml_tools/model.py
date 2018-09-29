@@ -150,8 +150,15 @@ class Model:
         self.datasets.validation.enable_augmentation = False
         self.datasets.test.enable_augmentation = False
 
+        # update some of the datasets parameters
         for dataset in datasets:
+
+            # path to data may be wrong, so remap to correct path here
+            # really db.database should be a local reference, not absolute...
+            dataset.db.database = os.path.join(os.path.dirname(dataset_filename), os.path.basename(dataset.db.database ))
+
             dataset.frame_size = self.retina_size
+
             if ignore_labels:
                 for label in ignore_labels:
                     dataset.remove_label(label)
