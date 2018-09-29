@@ -2,7 +2,6 @@ import tensorflow as tf
 from tensorflow.contrib.tensorboard.plugins import projector
 import numpy as np
 import matplotlib.pyplot as plt
-import msvcrt
 
 import os.path
 import pickle

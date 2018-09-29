@@ -38,6 +38,8 @@ else:
     # linux version of get_key, not tested yet!
     import curses
 
+    def get_key():
+        return None
 
 EPISON = 1e-5
 
