@@ -30,22 +30,11 @@ import os
 import datetime
 import numpy as np
 import shutil
+from ml_tools import config
 
 import tensorflow as tf
 
 from model_crnn import ModelCRNN
-
-# folder to put tensor board logs into
-LOG_FOLDER = "c:/cac/logs/"
-
-# dataset folder to use
-DATASET_FOLDER = "c:/cac/datasets/fantail"
-
-# name of the file to write results to.
-RESULTS_FILENAME = "experiments.txt"
-
-# folder to store completed experiments in
-EXPERIMENTS_FOLDER = "c:/cac/experiments"
 
 # list of jobs to process.
 job_list = []
@@ -65,7 +54,7 @@ def train_model(run_name, epochs=30.0, limit_training_segments=None, limit_train
 
     # a little bit of a pain, the model needs to know how many classes to classify during initialisation,
     # but we don't load the dataset till after that, so we load it here just to count the number of labels...
-    dataset_name = os.path.join(DATASET_FOLDER, 'datasets.dat')
+    dataset_name = os.path.join(config.DATASET_FOLDER, 'datasets.dat')
     dsets = pickle.load(open(dataset_name,'rb'))
     labels = dsets[0].labels
 
@@ -88,7 +77,7 @@ def train_model(run_name, epochs=30.0, limit_training_segments=None, limit_train
     )
     np.random.seed = prev_seed
 
-    model.log_dir = LOG_FOLDER
+    model.log_dir = config.TENSORBOARD_LOG_FOLDER
     model.save_epoch_references = False
 
     # display the data set summary
@@ -129,7 +118,7 @@ def has_job(job_name):
     """ Returns if this job has been processed before or not. """
 
     try:
-        f = open(RESULTS_FILENAME, "r")
+        f = open(config.TRAINING_RESULTS_FILENAME, "r")
     except:
         return False
 
@@ -147,7 +136,7 @@ def copy_folder(src, dst, symlinks=False, ignore=None):
     # https://stackoverflow.com/questions/1868714/how-do-i-copy-an-entire-directory-of-files-into-an-existing-directory-using-pyth
 
     try:
-        os.mkdir("c:/cac/experiments/test")
+        os.mkdir(dst)
     except FileExistsError:
         # this is fine... don't look before you leap ;)
         pass
@@ -171,13 +160,13 @@ def log_job_complete(model, job_name, score,params = None, values = None):
 
     """
 
-    f = open(RESULTS_FILENAME, "a")
+    f = open(config.TRAINING_RESULTS_FILENAME, "a")
     f.write("{}, {}, {}, {}\n".format(job_name, str(score), params if params is not None else "", values if values is not None else ""))
     f.close()
 
     # copy completed log to folder
     try:
-        copy_folder(os.path.join(LOG_FOLDER, model.log_id), os.path.join(EXPERIMENTS_FOLDER, job_name))
+        copy_folder(os.path.join(config.TENSORBOARD_LOG_FOLDER, model.log_id), os.path.join(config.EXPERIMENTS_FOLDER, job_name))
     except Exception as e:
         print("Error copying job to experiments folder:",e)
 
@@ -204,8 +193,8 @@ def run_job(job_name, **kwargs):
 
 def process_job_list():
 
-    if not os.path.exists(RESULTS_FILENAME):
-        open(RESULTS_FILENAME, "w").close()
+    if not os.path.exists(config.TRAINING_RESULTS_FILENAME):
+        open(config.TRAINING_RESULTS_FILENAME, "w").close()
 
     print()
     print("Found {} jobs.".format(len(job_list)))
@@ -255,7 +244,6 @@ def main():
 
 
     for run in range(1, 1 + 1):
-
         for thermal_threshold in [-100, -50, -20, -10, 0, 10, 20, 50, 100]:
             run_job("use_filtered=On with thermal threshold={}-{}".format(thermal_threshold, run), use_filtered=True, thermal_threshold=thermal_threshold)
         for batch_size in [1, 2, 4, 8, 16, 32, 64]:

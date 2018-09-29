@@ -15,13 +15,12 @@ import pickle
 import time
 import dateutil
 from datetime import datetime
+from ml_tools import config
 
 import numpy as np
 
 from ml_tools.trackdatabase import TrackDatabase
 from ml_tools.dataset import Dataset
-
-DATASET_FOLDER = 'c:/cac/datasets/fantail/'
 
 # uses split from previous run
 USE_PREVIOUS_SPLIT = True
@@ -360,7 +359,7 @@ def main():
     global dataset
     global db
 
-    db = TrackDatabase(os.path.join(DATASET_FOLDER,'dataset.hdf5'))
+    db = TrackDatabase(os.path.join(config.DATASET_FOLDER,'dataset.hdf5'))
     dataset = Dataset(db, 'dataset')
 
     total_tracks = len(db.get_all_track_ids())
@@ -390,7 +389,7 @@ def main():
     else:
         datasets = split_dataset_days()
 
-    pickle.dump(datasets,open(os.path.join(DATASET_FOLDER,'datasets.dat'),'wb'))
+    pickle.dump(datasets,open(os.path.join(config.DATASET_FOLDER,'datasets.dat'),'wb'))
 
 
 if __name__ == "__main__":

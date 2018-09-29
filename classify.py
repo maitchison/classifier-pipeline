@@ -16,15 +16,13 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import cv2
 
-from ml_tools import tools
+from ml_tools import tools, config
 from ml_tools.model import Model
 from ml_tools.dataset import Preprocessor
 from ml_tools.cptvfileprocessor import CPTVFileProcessor
 from ml_tools.mpeg_creator import MPEGCreator
 from ml_tools.trackextractor import TrackExtractor, Track, Region
 
-
-DEFAULT_BASE_PATH = "c:/cac"
 HERE = os.path.dirname(__file__)
 RESOURCES_PATH = os.path.join(HERE, "resources")
 MODEL_NAME = "model_hq_joint"

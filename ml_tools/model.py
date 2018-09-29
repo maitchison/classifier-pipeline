@@ -14,11 +14,7 @@ import io
 from collections import namedtuple
 from sklearn import metrics
 
-from ml_tools import tools
-from ml_tools import visualise
-
-# folder to save model while it's training.  Make sure this isn't on a dropbox folder and it will cause a crash.
-CHECKPOINT_FOLDER = "c:\cac\checkpoints"
+from ml_tools import tools, visualise, config
 
 class Model:
     """ Defines a deep learning model """
@@ -617,7 +613,7 @@ class Model:
 
         self.log_id = run_name
 
-        LOG_DIR = os.path.join(self.log_dir, run_name)
+        summary_writers_folder = os.path.join(self.log_dir, run_name)
 
         iterations = int(math.ceil(epochs * self.rows / self.batch_size))
         if run_name is None:
@@ -637,14 +633,14 @@ class Model:
         self.stats['training_max_epoch'] = epochs
 
         # setup writers and run a quick benchmark
-        print("Initialising summary writers at {}.".format(LOG_DIR))
+        print("Initialising summary writers at {}.".format(summary_writers_folder))
         self.setup_summary_writers(run_name)
 
         # Run the initializer
         init = tf.global_variables_initializer()
         self.session.run(init)
 
-        self.train_samples = self.setup_sample_training_data(LOG_DIR, self.writer_train)
+        self.train_samples = self.setup_sample_training_data(summary_writers_folder, self.writer_train)
 
         # stop conditions
         time_since_last_val_loss = 0
@@ -759,7 +755,7 @@ class Model:
                     print("Results: {:.1f} {}".format(acc*100,["{:.1f}".format(x*100) for x in f1]))
                     if self.save_epoch_references:
                         print('Save epoch reference')
-                        self.save(os.path.join(CHECKPOINT_FOLDER, "training-epoch-{:02d}.sav".format(int(epoch))))
+                        self.save(os.path.join(config.TENSORFLOW_CHECKPOINT_FOLDER, "training-epoch-{:02d}.sav".format(int(epoch))))
 
                     last_epoch_save = int(epoch)
 
@@ -767,10 +763,10 @@ class Model:
                         print('Saving best validation model....')
                         # saving a copy in the log dir allows TensorBoard to access some additional information such
                         # as the current training data variables.
-                        self.save(os.path.join(CHECKPOINT_FOLDER, "training-best.sav"))
+                        self.save(os.path.join(config.TENSORFLOW_CHECKPOINT_FOLDER, "training-best.sav"))
                         if self.save_model_in_log_dir:
                             try:
-                                self.save(os.path.join(LOG_DIR, "training-epoch-{:02d}.sav".format(int(epoch))))
+                                self.save(os.path.join(summary_writers_folder, "training-epoch-{:02d}.sav".format(int(epoch))))
                             except Exception as e:
                                 logging.warning("Could not write training checkpoint, probably TensorBoard is open.")
                         best_report_acc = acc
@@ -797,14 +793,14 @@ class Model:
 
         # make sure we have a final state copy
         # we save copyies in the checkpoing folder, and also in the log folder for reference.
-        self.save(os.path.join(CHECKPOINT_FOLDER, "training-final.sav"))
-        self.save(os.path.join(LOG_DIR, "training-final.sav"))
+        self.save(os.path.join(config.CHECKPOINT_FOLDER, "training-final.sav"))
+        self.save(os.path.join(summary_writers_folder, "training-final.sav"))
 
         # restore previous best
         if self.use_best_weights:
             print("Using model from step", best_step)
-            self.load(os.path.join(CHECKPOINT_FOLDER, "training-best.sav"))
-            self.save(os.path.join(LOG_DIR, "training-best.sav"))
+            self.load(os.path.join(config.CHECKPOINT_FOLDER, "training-best.sav"))
+            self.save(os.path.join(summary_writers_folder, "training-best.sav"))
 
         self.eval_score = self.eval_model()
         self.log_text('metric/final_score', self.eval_score)

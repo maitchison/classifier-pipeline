@@ -36,20 +36,13 @@ import os
 import datetime
 import argparse
 
+from ml_tools import config
+
 import ast
 
 import tensorflow as tf
 
 from model_crnn import ModelCRNN
-
-# folder to put tensor board logs into
-LOG_FOLDER = "c:/cac/logs/"
-
-# dataset folder to use
-DATASET_FOLDER = "c:/cac/datasets/fantail"
-
-# name of the file to write results to.
-RESULTS_FILENAME = "batch training results.txt"
 
 # this is a good list for a full search, but will take a long time to run (days)
 FULL_SEARCH_PARAMS = {
@@ -90,14 +83,14 @@ def train_model(rum_name, epochs=30.0, **kwargs):
 
     # a little bit of a pain, the model needs to know how many classes to classify during initialisation,
     # but we don't load the dataset till after that, so we load it here just to count the number of labels...
-    dataset_name = os.path.join(DATASET_FOLDER, 'datasets.dat')
+    dataset_name = os.path.join(config.DATASET_FOLDER, 'datasets.dat')
     dsets = pickle.load(open(dataset_name,'rb'))
     labels = dsets[0].labels
 
     model = ModelCRNN(labels=len(labels), **kwargs)
 
     model.import_dataset(dataset_name)
-    model.log_dir = LOG_FOLDER
+    model.log_dir = config.TENSORFLOW_LOG_FOLDER
 
     # display the data set summary
     print("Training on labels",labels)
@@ -135,7 +128,7 @@ def train_model(rum_name, epochs=30.0, **kwargs):
 
 def has_job(job_name):
     """ Returns if this job has been processed before or not. """
-    f = open(RESULTS_FILENAME, "r")
+    f = open(config.TRAINING_RESULTS_FILENAME, "r")
     for line in f:
         words = line.split(",")
         job = words[0] if len(words) >= 1 else ""
@@ -154,7 +147,7 @@ def log_job_complete(job_name, score,params = None, values = None):
     :param values [optional] A corresponding list of the parameter values used to train this model
 
     """
-    f = open(RESULTS_FILENAME, "a")
+    f = open(config.TRAINING_RESULTS_FILENAME, "a")
     f.write("{}, {}, {}, {}\n".format(job_name, str(score), params if params is not None else "", values if values is not None else ""))
     f.close()
 
@@ -184,8 +177,8 @@ def axis_search():
 
     """
 
-    if not os.path.exists(RESULTS_FILENAME):
-        open(RESULTS_FILENAME, "w").close()
+    if not os.path.exists(config.TRAINING_RESULTS_FILENAME):
+        open(config.TRAINING_RESULTS_FILENAME, "w").close()
 
     # run the reference job with default params
     run_job('reference')

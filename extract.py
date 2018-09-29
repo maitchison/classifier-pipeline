@@ -6,24 +6,19 @@ import cv2
 from PIL import Image, ImageDraw
 import numpy as np
 
-from ml_tools import trackdatabase
+from ml_tools import tools, config, trackdatabase
 from ml_tools.trackextractor import TrackExtractor
 from ml_tools.cptvfileprocessor import CPTVFileProcessor
 from ml_tools.trackdatabase import TrackDatabase
-from ml_tools import tools
 
 import matplotlib.pyplot as plt
 import os
 import multiprocessing
 
-import glob
 import argparse
 import time
 
 __version__ = '1.1.0'
-
-# default base path to use if no source or destination folder are given.
-DEFAULT_BASE_PATH = "c:\\cac"
 
 EXCLUDED_FOLDERS = ['other', 'unidentified', 'untagged', 'moving', 'multi','missclassified']
 
@@ -482,8 +477,8 @@ def parse_params():
 
     parser.add_argument('target', default='all', help='Target to process, "all" processes all folders, "test" runs test cases, "clean" to remove banned clips from db, or a "cptv" file to run a single source.')
 
-    parser.add_argument('-o', '--output-folder', default=os.path.join(DEFAULT_BASE_PATH,"tracks"), help='Folder to output tracks to')
-    parser.add_argument('-s', '--source-folder', default=os.path.join(DEFAULT_BASE_PATH,"clips"), help='Source folder root with class folders containing CPTV files')
+    parser.add_argument('-o', '--output-folder', default=os.path.join(config.DEFAULT_BASE_PATH,"tracks"), help='Folder to output tracks to')
+    parser.add_argument('-s', '--source-folder', default=os.path.join(config.DEFAULT_BASE_PATH,"clips"), help='Source folder root with class folders containing CPTV files')
     parser.add_argument('-c', '--color-map', default="custom_colormap.dat", help='Colormap to use when exporting MPEG files')
     parser.add_argument('-p', '--enable-previews', action='count', help='Enables preview MPEG files (can be slow)')
     parser.add_argument('-t', '--test-file', default='tests.txt', help='File containing test cases to run')
