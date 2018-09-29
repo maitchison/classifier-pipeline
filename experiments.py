@@ -149,6 +149,23 @@ def copy_folder(src, dst, symlinks=False, ignore=None):
         else:
             shutil.copy2(s, d)
 
+def get_lock_name(job_name):
+    return os.path.join(config.EXPERIMENTS_FOLDER, "_" + job_name + ".lock")
+
+def create_lock(job_name):
+    """ Creates a lock for given job. """
+    open(get_lock_name(job_name),'w').close()
+
+def has_lock(job_name):
+    return os.path.isfile(get_lock_name(job_name))
+
+def remove_lock(job_name):
+    """ Removes lock for given job"""
+    try:
+        os.remove(get_lock_name(job_name))
+    except Exception as e:
+        print("Error removing lock, ",e)
+
 def log_job_complete(model, job_name, score,params = None, values = None):
 
     """ Log reference to job being complete, and move important files to a folder
@@ -164,6 +181,8 @@ def log_job_complete(model, job_name, score,params = None, values = None):
     f.write("{}, {}, {}, {}\n".format(job_name, str(score), params if params is not None else "", values if values is not None else ""))
     f.close()
 
+    remove_lock(job_name)
+
     # copy completed log to folder
     try:
         copy_folder(os.path.join(config.TENSORBOARD_LOG_FOLDER, model.log_id), os.path.join(config.EXPERIMENTS_FOLDER, job_name))
@@ -175,8 +194,10 @@ def run_job(job_name, **kwargs):
     """ Run a job with given hyper parameters, and log its results. """
 
     # check if we have done this job...
-    if has_job(job_name):
+    if has_job(job_name) or has_lock(job_name):
         return
+
+    create_lock(job_name)
     
     # override default epochs
     if 'epochs' not in kwargs:

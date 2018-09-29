@@ -799,13 +799,13 @@ class Model:
 
         # make sure we have a final state copy
         # we save copyies in the checkpoing folder, and also in the log folder for reference.
-        self.save(os.path.join(config.CHECKPOINT_FOLDER, "training-final.sav"))
+        self.save(os.path.join(config.TENSORFLOW_CHECKPOINT_FOLDER, "training-final.sav"))
         self.save(os.path.join(summary_writers_folder, "training-final.sav"))
 
         # restore previous best
         if self.use_best_weights:
             print("Using model from step", best_step)
-            self.load(os.path.join(config.CHECKPOINT_FOLDER, "training-best.sav"))
+            self.load(os.path.join(config.TENSORFLOW_CHECKPOINT_FOLDER, "training-best.sav"))
             self.save(os.path.join(summary_writers_folder, "training-best.sav"))
 
         self.eval_score = self.eval_model()
@@ -1036,7 +1036,6 @@ class Model:
                               shape=shape)
         input = tf.placeholder(name=name + "_in", dtype=tf.float32, shape=shape)
         assign_op = tf.assign(var, input, name=name + "_assign_op")
-        print("Creating writable varible {} with size {:.1f}mb".format(name, (tools.product(shape)*4/1024/1024)))
         return var
 
     def update_writeable_variable(self, name, data):
