@@ -118,7 +118,7 @@ def has_job(job_name):
     """ Returns if this job has been processed before or not. """
 
     try:
-        f = open(config.TRAINING_RESULTS_FILENAME, "r")
+        f = open(os.path.join(config.EXPERIMENTS_FOLDER,config.TRAINING_RESULTS_FILENAME), "r")
     except:
         return False
 
@@ -160,7 +160,7 @@ def log_job_complete(model, job_name, score,params = None, values = None):
 
     """
 
-    f = open(config.TRAINING_RESULTS_FILENAME, "a")
+    f = open(os.path.join(config.EXPERIMENTS_FOLDER,config.TRAINING_RESULTS_FILENAME), "a")
     f.write("{}, {}, {}, {}\n".format(job_name, str(score), params if params is not None else "", values if values is not None else ""))
     f.close()
 
@@ -193,8 +193,8 @@ def run_job(job_name, **kwargs):
 
 def process_job_list():
 
-    if not os.path.exists(config.TRAINING_RESULTS_FILENAME):
-        open(config.TRAINING_RESULTS_FILENAME, "w").close()
+    if not os.path.exists(os.path.join(config.EXPERIMENTS_FOLDER,config.TRAINING_RESULTS_FILENAME)):
+        open(os.path.join(config.EXPERIMENTS_FOLDER,config.TRAINING_RESULTS_FILENAME), "w").close()
 
     print()
     print("Found {} jobs.".format(len(job_list)))
