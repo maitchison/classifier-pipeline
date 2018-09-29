@@ -154,7 +154,7 @@ def get_lock_name(job_name):
 
 def create_lock(job_name):
     """ Creates a lock for given job. """
-    open(get_lock_name(job_name),'w').close()
+    open(get_lock_name(job_name),'a').close()
 
 def has_lock(job_name):
     return os.path.isfile(get_lock_name(job_name))
