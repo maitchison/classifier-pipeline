@@ -8,12 +8,13 @@ Tracks are broken into segments.  Filtered, and then passed to the trainer using
 
 """
 
+import os
+
 import queue
 import threading
 import multiprocessing
 import cv2
 
-import os
 import math
 import random
 import time

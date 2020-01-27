@@ -186,17 +186,16 @@ class ConvModel(Model):
             learning_rate = self.params['learning_rate']
 
         # setup optimizer
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name='Adam')
+        if self.params['optimizer'].upper() == 'ADAM':
+            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name='Optimizer')
+        elif self.params['optimizer'].upper() == 'SGD':
+            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=self.params['momentum'], name='Optimizer')
+        else:
+            raise Exception("Invalid optimizer name {}.".format(self.params['optimizer']))
+
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             train_op = optimizer.minimize(loss, name='train_op')
-            # get gradients
-            # note: I can't write out the grads because of problems with NaN
-            # his is very concerning as it implies we have a critical problem with training.  Maybe I should try
-            # clipping gradients at something very high, say 100?
-            # grads = optimizer.compute_gradients(loss)
-            # for index, grad in enumerate(grads):
-            #    self.create_summaries("grads/{}".format(grads[index][1].name.split(':')[0]), grads[index])
 
 
 class ModelCRNN(ConvModel):
@@ -210,9 +209,12 @@ class ModelCRNN(ConvModel):
     DEFAULT_PARAMS = {
 
         # training params
-        'batch_size': 16,
+        'optimizer': 'ADAM',
         'learning_rate': 1e-4,
         'learning_rate_decay': 1.0,
+        'momentum': 0.99,
+
+        'batch_size': 16,
         'l2_reg': 0.0,
         'label_smoothing': 0.1,
         'keep_prob': 0.5,
@@ -226,6 +228,8 @@ class ModelCRNN(ConvModel):
                                     # this is faster, but comes at a price.
         'filters': 512,             # number of filters in final layer.  first layer as 1/8th so 128 is a
                                     # realistic minimum.
+        'layers':5,
+
         # augmentation
         'augmentation': True,
         'thermal_threshold': 10,
@@ -274,14 +278,24 @@ class ModelCRNN(ConvModel):
 
         down_sample_settings = {'conv_stride':2} if self.params['use_conv_stride'] else {'pool_stride':2}
 
-        # each layere halves size and doubles filters, final layer is a 1x1 conv which acts as a fully connected layer.
+        # each layer halves size and doubles filters, final layer is a 1x1 conv which acts as a fully connected layer.
         # finally we use an average pool to reduce to a non localised feature vector.
         filters = self.params['filters']
-        layer = self.conv_layer('thermal/1', layer, filters//8, [3, 3], **down_sample_settings)
-        layer = self.conv_layer('thermal/2', layer, filters//4, [3, 3], **down_sample_settings)
-        layer = self.conv_layer('thermal/3', layer, filters//2, [3, 3], **down_sample_settings)
-        layer = self.conv_layer('thermal/4', layer, filters//1, [3, 3], **down_sample_settings)
-        layer = self.conv_layer('thermal/5', layer, filters//1, [1, 1])
+
+        if self.params['layers'] >= 1:
+            layer = self.conv_layer('thermal/1', layer, filters//8, [3, 3], **down_sample_settings)
+        if self.params['layers'] >= 2:
+            layer = self.conv_layer('thermal/2', layer, filters//4, [3, 3], **down_sample_settings)
+        if self.params['layers'] >= 3:
+            layer = self.conv_layer('thermal/3', layer, filters//2, [3, 3], **down_sample_settings)
+        if self.params['layers'] >= 4:
+            layer = self.conv_layer('thermal/4', layer, filters//1, [3, 3], **down_sample_settings)
+        if self.params['layers'] >= 5:
+            layer = self.conv_layer('thermal/5', layer, filters//1, [1, 1])
+        if self.params['layers'] >= 6:
+            layer = self.conv_layer('thermal/6', layer, filters//1, [1, 1])
+        if self.params['layers'] >= 7:
+            layer = self.conv_layer('thermal/7', layer, filters//1, [1, 1])
 
         output_dims = (layer.shape[1],layer.shape[2])
         logging.info("Convolution output shape: {}".format(layer.shape))
@@ -297,11 +311,20 @@ class ModelCRNN(ConvModel):
         if self.params['enable_flow']:
             # integrate thermal and flow into a 3 channel layer
             layer = tf.concat((primary_channel, flow), axis=3)
-            layer = self.conv_layer('motion/1', layer, filters//8, [3, 3], **down_sample_settings)
-            layer = self.conv_layer('motion/2', layer, filters//4, [3, 3], **down_sample_settings)
-            layer = self.conv_layer('motion/3', layer, filters//2, [3, 3], **down_sample_settings)
-            layer = self.conv_layer('motion/4', layer, filters//1, [3, 3], **down_sample_settings)
-            layer = self.conv_layer('motion/5', layer, filters//1, [1, 1])
+            if self.params['layers'] >= 1:
+                layer = self.conv_layer('motion/1', layer, filters//8, [3, 3], **down_sample_settings)
+            if self.params['layers'] >= 2:
+                layer = self.conv_layer('motion/2', layer, filters//4, [3, 3], **down_sample_settings)
+            if self.params['layers'] >= 3:
+                layer = self.conv_layer('motion/3', layer, filters//2, [3, 3], **down_sample_settings)
+            if self.params['layers'] >= 4:
+                layer = self.conv_layer('motion/4', layer, filters//1, [3, 3], **down_sample_settings)
+            if self.params['layers'] >= 5:
+                layer = self.conv_layer('motion/5', layer, filters//1, [1, 1])
+            if self.params['layers'] >= 6:
+                layer = self.conv_layer('motion/6', layer, filters//1, [1, 1])
+            if self.params['layers'] >= 7:
+                layer = self.conv_layer('motion/7', layer, filters//1, [1, 1])
 
             output_dims = (layer.shape[1], layer.shape[2])
             layer = tf.layers.average_pooling2d(layer, pool_size=output_dims, strides=(1,1), padding="VALID")

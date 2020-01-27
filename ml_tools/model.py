@@ -10,6 +10,7 @@ import logging
 import time
 import json
 import io
+import socket
 from collections import namedtuple
 from sklearn import metrics
 
@@ -686,6 +687,7 @@ class Model:
                 if key == 'p':
                     print("pausing, press r to resume")
                     while True:
+                        time.sleep(0.1)
                         key = tools.get_key()
                         if key and key.decode("utf-8") == 'r':
                             break
@@ -726,7 +728,7 @@ class Model:
 
                 best_epoch = (best_step * self.batch_size) / self.rows
 
-                print('[epoch={0:.2f}/{10:.2f}] step {1}, training={2:.1f}%/{3:.3f} validation={4:.1f}%/{5:.3f} [times:{6:.1f}ms,{7:.1f}ms,{8:.1f}ms] eta {9:.1f}hrs best={11:.2f}@{12}) tsbv={13}'.format(
+                print('[epoch={0:.2f}/{10:.2f}] step {1}, train={2:.1f}%/{3:.3f} val={4:.1f}%/{5:.3f} [times:{6:.1f}ms,{7:.1f}ms,{8:.1f}ms] eta {9:.1f}hrs best={11:.2f}@{12:.1f}) tsbv={13}'.format(
                     epoch, i, train_accuracy*100, train_loss * 10, val_accuracy*100, val_loss * 10,
                     1000 * prep_time / examples_since_print,
                     1000 * train_time / examples_since_print,
@@ -734,6 +736,8 @@ class Model:
                     eta / 60,
                     epochs, 100*best_report_acc, best_epoch, time_since_last_val_loss
                 ))
+
+                self.stats['training_segment_train_time'] = 1000 * train_time / examples_since_print
 
                 if train_accuracy > 0.99:
                     training_converged = True
@@ -787,13 +791,18 @@ class Model:
                 prep_time = 0
                 examples_since_print = 0
 
+            # todo: split window into a burn-in and train part
+            #burn_part = batch[0][:9]
+            #train_part = batch[0][9:]
+
+            # get state from burn in
+            # train
+
             # train on this batch
             start = time.time()
             feed_dict = self.get_feed_dict(batch[0], batch[1], is_training=True)
             _ = self.session.run([self.train_op], feed_dict=feed_dict)
             train_time += time.time()-start
-
-            self.stats['training_segment_train_time'] = train_time
 
             examples_since_print += self.batch_size
 
@@ -867,6 +876,7 @@ class Model:
         model_stats['training_segment_time'] = self.stats['training_segment_train_time']
         model_stats['training_epochs'] = self.stats['training_current_epoch']
         model_stats['training_max_epochs'] = self.stats['training_max_epoch']
+        model_stats['host_name'] = socket.gethostname()
         model_stats['version'] = self.VERSION
 
         json.dump(model_stats, open(filename+ ".txt", 'w'), indent=4)

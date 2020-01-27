@@ -352,9 +352,15 @@ def get_session(disable_gpu=False):
         session = tf.Session(config=tf.ConfigProto(device_count={'GPU': 0}))
     else:
         logging.info("Creating new GPU session with memory growth enabled.")
+
+        from tensorflow.python.client import device_lib
+        print("---------------------------------------------------------------")
+        local_device_protos = device_lib.list_local_devices()
+        print([x.name for x in local_device_protos])
+        print("---------------------------------------------------------------")
+
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        config.gpu_options.per_process_gpu_memory_fraction = 0.8 # save some ram for other applications.
         session = tf.Session(config=config)
 
     return session

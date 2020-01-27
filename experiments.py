@@ -246,13 +246,38 @@ def main():
 
     run_job("test", epochs=0.1)
 
-    for retina_size in [1,2,4,8,16,32,48,64,96,128]:
-        run_job("retina_size={}-{}".format(retina_size, 1), retina_size=retina_size)
+    for layers in range(0,7+1):
+        # reduce batch size if needed.
+        batch_size = 8
+        run_job("layers={}-{}".format(layers, 1), layers=layers)
+
+    for retina_size in [1,2,4,8,16,32,48,64,96]:
+        # give ourselves a little bit more memory...
+        batch_size = 8
+        run_job("retina_size={}-{}".format(retina_size, 1), retina_size=retina_size, batch_size = batch_size)
 
 
     for filters in [128, 256, 512, 1024, 2048]:
         # reduce batch due to memory constraints with large number of filters.
-        run_job("filters={}-{}".format(filters, 1), filters=filters, batch_size=8192//filters)
+        batch_size = 8
+        run_job("filters={}-{}".format(filters, 1), filters=filters)
+
+    # SGD optimization (can it do better than adam?)
+    for learning_rate in [1e-3, 1e-4, 1e-5]:
+        momentum = 0.99
+        decay = 1.0
+        run_job("sgd={}-{}-{}-{}".format(learning_rate, momentum, decay, 1), learning_rate=learning_rate,
+                optimizer="SGD", momentum=momentum, decay=decay)
+    for momentum in [0.9, 0.95, 0.99,1.0]:
+        learning_rate = 1e-4
+        decay = 1.0
+        run_job("sgd={}-{}-{}-{}".format(learning_rate, momentum, decay, 1), learning_rate=learning_rate,
+                optimizer="SGD", momentum=momentum, decay=decay)
+    for decay in [1.0, 0.95, 0.90]:
+        learning_rate = 1e-4
+        momentum = 0.99
+        run_job("sgd={}-{}-{}-{}".format(learning_rate, momentum, decay, 1), learning_rate=learning_rate,
+                optimizer="SGD", momentum=momentum, decay=decay)
 
     # some basic settings
     for run in range(1, 5 + 1):

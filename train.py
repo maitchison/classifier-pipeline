@@ -27,12 +27,17 @@ All the training results are stored in tensorboard.  To assess the training run 
 
 """
 
+import os
+
+import tables
+import h5py
+
 import matplotlib
 matplotlib.use('Agg') # enable canvas drawing
 
+import numpy as np
 import logging
 import pickle
-import os
 import datetime
 import argparse
 
@@ -46,18 +51,21 @@ from model_crnn import ModelCRNN
 
 # this is a good list for a full search, but will take a long time to run (days)
 FULL_SEARCH_PARAMS = {
-        'batch_size': [1, 2, 4, 8, 16, 32, 64],
+        'batch_size': [16, 32, 64, 128, 256],
         'learning_rate': [1e-3, 3e-4, 1e-4, 3e-5, 1e-5],
         'l2_reg': [0,1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7,1e-8],
         'label_smoothing': [0, 0.01, 0.05, 0.1, 0.2],
         'keep_prob': [0,0.1,0.2,0.5,0.8,1.0],
+        'epochs': [30],
         'batch_norm': [True, False],
         'lstm_units': [64, 128, 256, 512],
+        'layers': [3,4,5,6,7],
+        'optimizer': ['SGD'],
+        'momentum': [0.9,0.95,0.99],
+        'filters': [128, 256, 512],
         'enable_flow': [True, False],
         'augmentation': [True, False],
-        'thermal_threshold': [-100,-20,-10,0,10,20,100],
-        # these runs will be identical in their parameters, it gives a feel for the varience during training.
-        'identical': [1, 2, 3, 4, 5],
+        'thermal_threshold': [-100,-20,-10,0,10,20,100]
     }
 
 # this checks just the important parameters, and only around areas that are likely to work well.
@@ -68,6 +76,7 @@ SHORT_SEARCH_PARAMS = {
         'label_smoothing': [0, 0.05, 0.2],
         'keep_prob': [0.1,0.4,0.6,1.0],
         'batch_norm': [False],
+        'epochs': [30],
         'lstm_units': [128, 512],
         'enable_flow': [False],
         'augmentation': [False],
@@ -90,7 +99,7 @@ def train_model(rum_name, epochs=30.0, **kwargs):
     model = ModelCRNN(labels=len(labels), **kwargs)
 
     model.import_dataset(dataset_name)
-    model.log_dir = config.TENSORFLOW_LOG_FOLDER
+    model.log_dir = config.TENSORBOARD_LOG_FOLDER
 
     # display the data set summary
     print("Training on labels",labels)
@@ -151,7 +160,7 @@ def log_job_complete(job_name, score,params = None, values = None):
     f.write("{}, {}, {}, {}\n".format(job_name, str(score), params if params is not None else "", values if values is not None else ""))
     f.close()
 
-def run_job(job_name, **kwargs):
+def run_job(job_name, epochs=30, **kwargs):
     """ Run a job with given hyper parameters, and log its results. """
 
     # check if we have done this job...
@@ -162,7 +171,7 @@ def run_job(job_name, **kwargs):
     print("Processing", job_name)
     print("-" * 60)
 
-    model = train_model("search/" + job_name, **kwargs)
+    model = train_model("search/" + job_name, epochs=epochs, **kwargs)
 
     log_job_complete(job_name, model.eval_score, list(kwargs.keys()), list(kwargs.values()))
 
@@ -184,12 +193,33 @@ def axis_search():
     run_job('reference')
 
     # go through each job and process it.  Would be nice to be able to start a job and pick up where we left off.
-    for param_name, param_values in SHORT_SEARCH_PARAMS.items():
+    for param_name, param_values in FULL_SEARCH_PARAMS.items():
         # build the job
         for param_value in param_values:
             job_name = param_name + "=" + str(param_value)
             args = {param_name: param_value}
             run_job(job_name, **args)
+
+
+def grid_search():
+    """
+    Grid search in random order.
+    """
+
+    if not os.path.exists(config.TRAINING_RESULTS_FILENAME):
+        open(config.TRAINING_RESULTS_FILENAME, "w").close()
+
+    # run the reference job with default params
+    run_job('reference')
+
+    for param_name, param_values in FULL_SEARCH_PARAMS.items():
+        args = {}
+        args[param_name] = np.random.choice(param_values)
+        job_name = "".join(["{}={}".format(k,v) for k,v in args.items()])
+        try:
+            run_job(job_name, **args)
+        except:
+            log_job_complete(job_name, 0) # record as failed...
 
 
 def main():
@@ -198,7 +228,7 @@ def main():
 
     parser.add_argument('name', default="unnammed", help='Name of training job, use "search" for hyper parameter search')
 
-    parser.add_argument('-d', '--dataset', default="datasets", help='Enables preview MPEG files (can be slow)')
+    parser.add_argument('-d', '--dataset', default="datasets")
     parser.add_argument('-e', '--epochs', default="30", help='Number of epochs to train for')
     parser.add_argument('-p', '--params', default="{}", help='model parameters')
 
@@ -206,7 +236,7 @@ def main():
 
     if args.name == "search":
         print("Performing hyper parameter search.")
-        axis_search()
+        grid_search()
     else:
         # literal eval should be safe here.
         model_args = ast.literal_eval(args.params)
