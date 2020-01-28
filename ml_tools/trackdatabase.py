@@ -20,17 +20,20 @@ class HDF5Manager:
         self.mode = mode
         self.f = None
         self.db = db
+        self.needs_lock = (mode != 'r')
 
     def __enter__(self):
         # note: we might not have to lock when in read only mode?
         # this could improve performance
-        hdf5_lock.acquire()
+        if self.needs_lock:
+            hdf5_lock.acquire()
         self.f = h5py.File(self.db, self.mode)
         return self.f
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.f.close()
-        hdf5_lock.release()
+        if self.needs_lock:
+            hdf5_lock.release()
 
 
 class TrackDatabase:

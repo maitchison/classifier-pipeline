@@ -827,8 +827,8 @@ class Model:
         # make sure the workers load the correct number of frames.
         self.datasets.train.segment_width = self.testing_segment_frames
         self.datasets.validation.segment_width = self.testing_segment_frames
-        self.datasets.train.start_async_load(32)
-        self.datasets.validation.start_async_load(32)
+        self.datasets.train.start_async_load(64)
+        self.datasets.validation.start_async_load(64)
 
     def stop_async(self):
         self.datasets.train.stop_async_load()
@@ -863,14 +863,15 @@ class Model:
             print(e)
 
         # save some additional data
+        # some variables may not be serializable so we convert them to strings.
         model_stats = {}
         model_stats['name'] = self.MODEL_NAME
         model_stats['description'] = self.MODEL_DESCRIPTION
         model_stats['notes'] = ""
-        model_stats['labels'] = self.labels
-        model_stats['score'] = self.eval_score
-        model_stats['hyperparams'] = self.params
-        model_stats['log_id'] = self.log_id
+        model_stats['labels'] = str(self.labels)
+        model_stats['score'] = str(self.eval_score)
+        model_stats['hyperparams'] = str(self.params)
+        model_stats['log_id'] = str(self.log_id)
         model_stats['training_date'] = str(time.time())
         model_stats['training_time'] = self.stats['training_time']
         model_stats['training_segment_time'] = self.stats['training_segment_train_time']

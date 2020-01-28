@@ -328,7 +328,8 @@ class Dataset:
     """
 
     # Number of threads to use for async loading
-    WORKER_THREADS = 2
+    # Loading a segment takes around 28ms, and training on an RTX2080 takes about 5ms so around 6 workers are needed.
+    WORKER_THREADS = 8
 
     # If true uses processes instead of threads.  Threads do not scale as well due to the GIL, however there is no
     # transfer time required per segment.  Processes scale much better but require ~1ms to pickling the segments
@@ -927,18 +928,30 @@ def preloader(q, dataset):
     """ add a segment into buffer """
     print("(started async fetcher for {} with augment={} segment_width={})".format(
         dataset.name, dataset.enable_augmentation, dataset.segment_width))
-    loads = 0
-    timer = time.time()
+
+    time_loading = 0
+    time_full = 0
+
+    counter = 0
+
     while not dataset.preloader_stop_flag:
         if not q.full():
+            start_time = time.time()
+            # this takes around 28ms which is a little slow
             q.put(dataset.next_batch(1, disable_async=True))
-            loads += 1
-            if (time.time() - timer) > 1.0:
-                # logging.debug("{} segments per seconds {:.1f}".format(dataset.name, loads / (time.time() - timer)))
-                timer = time.time()
-                loads = 0
+            time_loading += (time.time() - start_time)
         else:
+            start_time = time.time()
             time.sleep(0.01)
+            time_full += (time.time() - start_time)
+
+        # show the worker load
+        counter += 1
+        if counter % 1000 == 0:
+            if dataset.name == "train":
+                print("Load={:.2f}".format(time_loading/(time_full+time_loading)))
+            time_loading = 0
+            time_full = 0
 
 def get_cropped_fraction(region: tools.Rectangle, width, height):
     """ Returns the fraction regions mass outside the rect ((0,0), (width, height)"""

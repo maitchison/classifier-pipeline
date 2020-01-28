@@ -51,7 +51,6 @@ from model_crnn import ModelCRNN
 
 # this is a good list for a full search, but will take a long time to run (days)
 FULL_SEARCH_PARAMS = {
-        'batch_size': [16, 32, 64, 128, 256],
         'learning_rate': [1e-3, 3e-4, 1e-4, 3e-5, 1e-5],
         'l2_reg': [0,1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7,1e-8],
         'label_smoothing': [0, 0.01, 0.05, 0.1, 0.2],
@@ -60,13 +59,16 @@ FULL_SEARCH_PARAMS = {
         'batch_norm': [True, False],
         'lstm_units': [64, 128, 256, 512],
         'layers': [3,4,5,6,7],
-        'optimizer': ['SGD'],
+        'optimizer': ['SGD', 'ADAM'],
         'momentum': [0.9,0.95,0.99],
-        'filters': [128, 256, 512],
-        'enable_flow': [True, False],
         'augmentation': [True, False],
-        'thermal_threshold': [-100,-20,-10,0,10,20,100]
-    }
+        'thermal_threshold': [-100,-20,-10,0,10,20,100],
+        # these are the high memory settings
+        'batch_size': [16, 32, 64, 128, 256],
+        'filters': [64, 128, 256, 512],
+        'enable_flow': [True, False],
+
+}
 
 # this checks just the important parameters, and only around areas that are likely to work well.
 # I've also excluded the default values as these do not need to be tested again.
@@ -171,6 +173,8 @@ def run_job(job_name, epochs=30, **kwargs):
     print("Processing", job_name)
     print("-" * 60)
 
+    tf.reset_default_graph()
+
     model = train_model("search/" + job_name, epochs=epochs, **kwargs)
 
     log_job_complete(job_name, model.eval_score, list(kwargs.keys()), list(kwargs.values()))
@@ -198,7 +202,7 @@ def axis_search():
         for param_value in param_values:
             job_name = param_name + "=" + str(param_value)
             args = {param_name: param_value}
-            run_job(job_name, **args)
+        run_job(job_name, **args)
 
 
 def grid_search():
@@ -212,17 +216,32 @@ def grid_search():
     # run the reference job with default params
     run_job('reference')
 
-    for param_name, param_values in FULL_SEARCH_PARAMS.items():
+    for _ in range(64):
         args = {}
-        args[param_name] = np.random.choice(param_values)
-        job_name = "".join(["{}={}".format(k,v) for k,v in args.items()])
+        for param_name, param_values in FULL_SEARCH_PARAMS.items():
+            args[param_name] = np.random.choice(param_values)
+
+        # make sure we have enough memory this this...
+        memory_required = args["filters"]*args["batch_size"]*(2 if args["enable_flow"] else 1)
+        if memory_required > 512*48*2:
+            # I probably don't have enough memory for this model.
+            continue
+
+        job_name = " ".join(["{}={}".format(k,v) for k,v in args.items()])
+
         try:
             run_job(job_name, **args)
-        except:
-            log_job_complete(job_name, 0) # record as failed...
+        except Exception as e:
+            print("Error:",e)
+            log_job_complete(job_name, -1) # record as failed...
 
 
 def main():
+
+    # disable matplotlib debug logging
+    import logging
+    mpl_logger = logging.getLogger("matplotlib")
+    mpl_logger.setLevel(logging.WARNING)
 
     parser = argparse.ArgumentParser()
 
