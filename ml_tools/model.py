@@ -863,22 +863,29 @@ class Model:
             print(e)
 
         # save some additional data
-        # some variables may not be serializable so we convert them to strings.
         model_stats = {}
         model_stats['name'] = self.MODEL_NAME
         model_stats['description'] = self.MODEL_DESCRIPTION
         model_stats['notes'] = ""
-        model_stats['labels'] = str(self.labels)
-        model_stats['score'] = str(self.eval_score)
-        model_stats['hyperparams'] = str(self.params)
-        model_stats['log_id'] = str(self.log_id)
-        model_stats['training_date'] = str(time.time())
+        model_stats['labels'] = self.labels
+        model_stats['score'] = self.eval_score
+        model_stats['hyperparams'] = self.params
+        model_stats['log_id'] = self.log_id
+        model_stats['training_date'] = time.time()
         model_stats['training_time'] = self.stats['training_time']
         model_stats['training_segment_time'] = self.stats['training_segment_train_time']
         model_stats['training_epochs'] = self.stats['training_current_epoch']
         model_stats['training_max_epochs'] = self.stats['training_max_epoch']
         model_stats['host_name'] = socket.gethostname()
         model_stats['version'] = self.VERSION
+
+        # some variables may not be serializable so we convert them to strings.
+        for k,v in model_stats.items():
+            if isinstance(v, int):
+                continue
+            if isinstance(v, float):
+                continue
+            model_stats[k] = str(v)
 
         json.dump(model_stats, open(filename+ ".txt", 'w'), indent=4)
 

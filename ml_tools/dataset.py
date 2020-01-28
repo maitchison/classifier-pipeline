@@ -948,8 +948,8 @@ def preloader(q, dataset):
         # show the worker load
         counter += 1
         if counter % 1000 == 0:
-            if dataset.name == "train":
-                print("Load={:.2f}".format(time_loading/(time_full+time_loading)))
+            #if dataset.name == "train":
+            #    print("Load={:.2f}".format(time_loading/(time_full+time_loading)))
             time_loading = 0
             time_full = 0
 
